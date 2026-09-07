@@ -1,0 +1,250 @@
+#!/usr/bin/env python3
+"""trmx — control CLI for the TRMX bridge (Phase 2 subset).
+
+Runnable even when the bridge is down, so `RUN_COMMAND` intents from the
+Android app can drive it (Phase 0 report §B.5, §B.8):
+
+  trmx init                 create ~/.trmx (no secrets)
+  trmx pair TOKEN [--force] store the app-generated token (0600)
+  trmx unpair               remove the token
+  trmx token [--show]       print the token (masked unless --show)
+  trmx start [--port N]     start the bridge detached (nohup-style)
+  trmx stop                 stop it (API stop, then SIGTERM fallback)
+  trmx status               is the port answering?
+  trmx pid                  print the bridge PID from the pidfile
+
+Phase 3 will add: install/upgrade, enable-boot, enable-service.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+BRIDGE = HERE / "trmx-bridge.py"
+
+
+def trmx_home() -> Path:
+    return Path(os.environ.get("TRMX_HOME", str(Path.home() / ".trmx"))).expanduser()
+
+
+def config_path() -> Path:
+    return trmx_home() / "bridge.json"
+
+
+def load_config() -> dict:
+    p = config_path()
+    if p.exists():
+        try:
+            return json.loads(p.read_text("utf-8"))
+        except Exception as e:  # noqa: BLE001
+            sys.exit(f"trmx: unreadable config {p}: {e}")
+    return {}
+
+
+def save_config(cfg: dict) -> None:
+    p = config_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2)
+        f.write("\n")
+    os.chmod(p, 0o600)
+
+
+def port_open(port: int, timeout: float = 0.5) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def cmd_init(args) -> int:
+    home = trmx_home()
+    for d in ("logs", "tools", "bin"):
+        (home / d).mkdir(parents=True, exist_ok=True)
+    print(f"initialized {home}")
+    return 0
+
+
+def cmd_pair(args) -> int:
+    token = args.token
+    if not token or len(token) < 20 or any(c not in
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+            for c in token):
+        sys.exit("trmx pair: TOKEN must be >=20 chars of url-safe base64")
+    cfg = load_config()
+    existing = cfg.get("token")
+    if existing and not cfg.get("token_generated") and not args.force:
+        sys.exit("trmx pair: a token is already paired. Run `trmx unpair` first, "
+                 "or use --force to override (rotates the credential).")
+    cfg["token"] = token
+    cfg["token_generated"] = False
+    save_config(cfg)
+    print("paired: token stored (never shown again; apps must keep their copy)")
+    return 0
+
+
+def cmd_unpair(args) -> int:
+    cfg = load_config()
+    if "token" in cfg:
+        del cfg["token"]
+        cfg.pop("token_generated", None)
+        save_config(cfg)
+        print("unpaired: token removed — all clients must re-pair")
+    else:
+        print("unpaired: nothing to do (no token was set)")
+    return 0
+
+
+def cmd_token(args) -> int:
+    cfg = load_config()
+    tok = cfg.get("token")
+    if not tok:
+        sys.exit("trmx token: no token configured — run `trmx pair TOKEN` "
+                 "or start the bridge once to auto-generate one")
+    print(tok if args.show else f"{tok[:4]}…(masked; use --show)")
+    return 0
+
+
+def cmd_start(args) -> int:
+    if not BRIDGE.exists():
+        sys.exit(f"trmx start: bridge not found at {BRIDGE}")
+    home = trmx_home()
+    home.mkdir(parents=True, exist_ok=True)
+    cfg = load_config()
+    port = args.port or int(cfg.get("port", 27342))
+    if args.port and int(cfg.get("port", 27342)) != args.port:
+        # remember an explicitly chosen port so stop/status find the bridge
+        cfg["port"] = args.port
+        save_config(cfg)
+    if port_open(port):
+        print(f"trmx start: something is already listening on 127.0.0.1:{port} — not starting")
+        return 1
+    log = open(home / "bridge.log", "ab")
+    env = dict(os.environ)
+    env["TRMX_HOME"] = str(home)
+    proc = subprocess.Popen(
+        [sys.executable, str(BRIDGE), "--home", str(home), "--port", str(port)],
+        stdout=log, stderr=log, stdin=subprocess.DEVNULL,
+        start_new_session=True, env=env)
+    (home / "bridge.pid").write_text(str(proc.pid))
+    for _ in range(100):  # up to 5s for the port to come up
+        if port_open(port):
+            print(f"trmx start: bridge running on 127.0.0.1:{port} (pid {proc.pid})")
+            return 0
+        if proc.poll() is not None:
+            break
+        time.sleep(0.05)
+    print(f"trmx start: bridge exited early (code {proc.poll()}); see {home / 'bridge.log'}")
+    return 1
+
+
+def api_stop(cfg: dict, port: int) -> bool:
+    tok = cfg.get("token")
+    if not tok:
+        return False
+    try:
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+        conn.request("POST", "/v1/system/bridge",
+                     body=json.dumps({"action": "stop"}),
+                     headers={"Authorization": f"Bearer {tok}",
+                              "X-TRMX-Protocol": "1",
+                              "Content-Type": "application/json"})
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        return resp.status == 200
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def cmd_stop(args) -> int:
+    home = trmx_home()
+    cfg = load_config()
+    port = int(cfg.get("port", 27342))
+    pidfile = home / "bridge.pid"
+    pid = int(pidfile.read_text()) if pidfile.exists() else None
+    if api_stop(cfg, port):
+        for _ in range(100):
+            if not port_open(port, timeout=0.2):
+                break
+            time.sleep(0.05)
+        print("trmx stop: bridge stopped (API)")
+        return 0
+    if pid:
+        import signal
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        for _ in range(100):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                print("trmx stop: bridge stopped (SIGTERM)")
+                return 0
+            time.sleep(0.05)
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        print("trmx stop: bridge killed (SIGKILL after grace)")
+        return 0
+    print("trmx stop: bridge not running (no pidfile, port closed)")
+    return 1
+
+
+def cmd_status(args) -> int:
+    home = trmx_home()
+    cfg = load_config()
+    port = int(cfg.get("port", 27342))
+    pidfile = home / "bridge.pid"
+    pid = pidfile.read_text().strip() if pidfile.exists() else "-"
+    paired = "paired" if cfg.get("token") else "unpaired"
+    print(f"home={home} port={port} pid={pid} token={paired}")
+    print(f"data-plane: {'UP' if port_open(port) else 'DOWN'} (127.0.0.1:{port})")
+    return 0 if port_open(port) else 1
+
+
+def cmd_pid(args) -> int:
+    pidfile = trmx_home() / "bridge.pid"
+    if pidfile.exists():
+        print(pidfile.read_text().strip())
+        return 0
+    return 1
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(prog="trmx", description="TRMX bridge control CLI")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("init").set_defaults(fn=cmd_init)
+    p = sub.add_parser("pair")
+    p.add_argument("token")
+    p.add_argument("--force", action="store_true")
+    p.set_defaults(fn=cmd_pair)
+    sub.add_parser("unpair").set_defaults(fn=cmd_unpair)
+    p = sub.add_parser("token")
+    p.add_argument("--show", action="store_true")
+    p.set_defaults(fn=cmd_token)
+    p = sub.add_parser("start")
+    p.add_argument("--port", type=int, default=None)
+    p.set_defaults(fn=cmd_start)
+    sub.add_parser("stop").set_defaults(fn=cmd_stop)
+    sub.add_parser("status").set_defaults(fn=cmd_status)
+    sub.add_parser("pid").set_defaults(fn=cmd_pid)
+    args = ap.parse_args()
+    sys.exit(args.fn(args))
+
+
+if __name__ == "__main__":
+    main()

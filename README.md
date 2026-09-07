@@ -12,8 +12,9 @@ TRMX-GUI does not replace Termux — it drives it: run and monitor jobs, stream 
 | Phase | State |
 |---|---|
 | **Phase 0 — Feasibility & Architecture Discovery** | ✅ **Complete & approved** (decisions in Appendix 3) |
-| **Phase 1 — Protocol freeze & project constitution** | ✅ **Draft complete — awaiting review** |
-| Phases 2–12 — Implementation | 🚫 not started (Phase 2 bridge PoC opens after Phase 1 review) |
+| **Phase 1 — Protocol freeze & project constitution** | ✅ **Complete** (TRMX-P/1, ADR-001…003) |
+| **Phase 2 — Termux bridge PoC** | ✅ **Code complete — 19/19 tests + smoke demo pass (sandbox); on-device verification in Termux pending** |
+| Phases 3–12 | 🚫 not started (Phase 3 = bootstrap automation via RUN_COMMAND intents) |
 
 **Phase 0 decisions:** me + friends distribution via GitHub releases · Termux from GitHub Releases · target Android 14+ (minSdk 26) · hybrid GUI (Tool Registry + universal runner) · device-local-only V1 transport · core-first V1 scope. See [Appendix 3 of the report](docs/PHASE-0-DISCOVERY-REPORT.md#appendix-3--phase-0-sign-off-inputs-recorded-2026-09-07).
 
@@ -39,7 +40,16 @@ TRMX-GUI does not replace Termux — it drives it: run and monitor jobs, stream 
 docs/        discovery report, protocol spec, living architecture, ADRs
 fixtures/    normative TRMX-P/1 contract fixtures (shared by both test suites)
 android/     native Android app (Kotlin + Jetpack Compose)      — Phase 4+
-termux/      trmx-bridge daemon, trmx CLI, install.sh, schemas  — Phase 2+
+termux/      trmx-bridge daemon, trmx CLI, tests, smoke demo     — Phase 2 ✅
+```
+
+## Try the Phase 2 bridge (in Termux or any Linux box)
+
+```sh
+pkg install python curl          # in Termux; elsewhere just need python3 + curl
+git clone https://github.com/sq987in-wq/TRMX-GUI && cd TRMX-GUI
+sh termux/tests/smoke.sh         # the full Phase 2 demo, throwaway home
+sh termux/tests/run_tests.sh     # the 19-test suite
 ```
 
 ## Contributing / building
