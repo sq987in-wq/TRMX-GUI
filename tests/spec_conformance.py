@@ -121,6 +121,52 @@ check("RUN_COMMAND permission requested",
 check("package visibility for com.termux declared",
       '<package android:name="com.termux" />' in manifest)
 
+# --- 5. Kotlin comment balance (nested comments!) ---------------------------
+
+print("5. Kotlin block-comment balance (they NEST — see Models.kt history)")
+def comment_depth_at_eof(src: str) -> int:
+    """Mini lexer: Kotlin block comments nest; strings are not comments."""
+    i, depth = 0, 0
+    while i < len(src):
+        if src.startswith("/*", i):
+            depth += 1; i += 2; continue
+        if src.startswith("*/", i) and depth > 0:
+            depth -= 1; i += 2; continue
+        if depth == 0:
+            if src.startswith("//", i):
+                j = src.find("\n", i)
+                i = len(src) if j == -1 else j
+                continue
+            if src.startswith('"""', i):
+                j = src.find('"""', i + 3)
+                i = len(src) if j == -1 else j + 3
+                continue
+            if src[i] == '"':
+                j = i + 1
+                while j < len(src) and src[j] != '"':
+                    if src[j] == "\\":
+                        j += 1
+                    j += 1
+                i = j + 1
+                continue
+            if src[i] == "'":
+                j = i + 1
+                while j < len(src) and src[j] != "'":
+                    if src[j] == "\\":
+                        j += 1
+                    j += 1
+                i = j + 1
+                continue
+        i += 1
+    return depth
+
+kt_files = sorted((REPO / "android" / "app" / "src").rglob("*.kt"))
+check("kotlin sources present", len(kt_files) > 0)
+for f in kt_files:
+    depth = comment_depth_at_eof(f.read_text("utf-8"))
+    check(f"{f.relative_to(REPO)} comments balanced", depth == 0,
+          f"block-comment depth at EOF = {depth} (a glob pattern inside a comment?)")
+
 # --- verdict ----------------------------------------------------------------
 
 print()

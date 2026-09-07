@@ -18,8 +18,11 @@ class Handshaker(
 ) {
 
     suspend fun awaitHandshake(
-        delayFn: suspend (Long) -> Unit = ::delay,
+        // nullable default: default-value expressions run in a non-suspend
+        // context, so a suspend callable reference can't be used there
+        delayFn: (suspend (Long) -> Unit)? = null,
     ): BridgeResult<SystemInfo> {
+        val wait = delayFn ?: ::delay
         var last: BridgeResult<SystemInfo> =
             BridgeResult.NetworkError(IllegalStateException("handshake deadline passed"))
         repeat(maxAttempts) {
@@ -31,7 +34,7 @@ class Handshaker(
                 else -> {}
             }
             last = r
-            delayFn(pollIntervalMs)
+            wait(pollIntervalMs)
         }
         return last
     }

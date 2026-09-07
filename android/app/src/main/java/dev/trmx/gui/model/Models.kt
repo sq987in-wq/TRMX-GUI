@@ -5,7 +5,10 @@ package dev.trmx.gui.model
  * (snake_case) so there is no @SerialName mapping to get wrong; every field
  * the app does not need is still parsed leniently (ignoreUnknownKeys).
  *
- * Normative shapes: fixtures/v1/*.json + docs/PROTOCOL.md.
+ * Normative shapes: the JSON fixtures under fixtures/v1 + docs/PROTOCOL.md.
+ * CAUTION: Kotlin block comments NEST — a glob pattern written inside a
+ * comment opens a nested comment and can silently swallow the whole file.
+ * (This exact bug cost CI round 1; see tests/kt_comment_audit below.)
  */
 
 import kotlinx.serialization.Serializable
