@@ -6,6 +6,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Added — Phase 5: job submission & management (2026-09-07)
+- **Submit** — "+ New job" dialog: name, argv (one line = one argument — no
+  shell parsing, no quoting, no injection surface by construction), optional
+  cwd + timeout; client-side validation mirrors the bridge's caps for
+  instant feedback; every submission carries a fresh idempotency key
+  (Idempotent-Replay honored).
+- **Job detail** — full TRMX-P/1 job record (argv, timings, pid, exit
+  code, error, byte counters, ring-eviction honesty), auto-refresh every
+  2 s while active.
+- **Cancel** — with confirmation; explains the TERM → grace → KILL
+  semantics; grace_ms/force per the wire contract.
+- `BridgeClient`: submitJob/getJob/cancelJob/listJobs(filters) — all
+  tested against MockWebServer with the normative fixtures (request bodies
+  JSON-checked, byte-identical response payloads).
+- `SubmitValidator` (pure): mirrored validation caps, line-based argv
+  parsing.
+- CI round 3 fixed two blind-write bugs: nullable `MutableStateFlow`
+  update lambdas and missing JobSummary wire fields (cwd/pgid/cancel_reason/
+  script/env — the wire always had them).
+
 ### Added — Phase 4: Android app shell & connection wizard (2026-09-07)
 - **Compile gate closed (CI round 2, `a362d1c`):** the app builds and all JVM
   unit tests pass on GitHub Actions; debug APK + test results are uploaded as

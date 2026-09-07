@@ -1,6 +1,6 @@
 # android/ — TRMX-GUI native app
 
-**Status: Phase 4 (app shell + connection wizard) — COMPILED & UNIT-TESTED GREEN in CI ([run 34146966489](https://github.com/sq987in-wq/TRMX-GUI/actions/runs/34146966489)); on-device e2e pending ([ADR-006](../docs/decisions/ADR-006-android-shell.md)).**
+**Status: Phases 4–5 (app shell + wizard + job management) — COMPILED & UNIT-TESTED GREEN in CI; on-device e2e pending ([ADR-006](../docs/decisions/ADR-006-android-shell.md)).**
 
 Native Android app (Kotlin + Jetpack Compose). The app is a *disposable control
 plane*: it drives Termux through `RUN_COMMAND` intents (control plane, see
@@ -52,12 +52,15 @@ gate, since the dev sandbox has no JDK/Android SDK.
 | Compose BOM | 2024.06.00 |
 | compileSdk / targetSdk / minSdk | 34 / 34 / 26 |
 
-## What works now (Phase 4)
+## What works now (Phases 4–5)
 
 - 3-consent wizard → `INSTALL_PY → INSTALL → PAIR → START → handshake`
   (CONTROL-PLANE.md §4), warm-start reconnect, per-step failure states with
   actionable hints
 - dashboard: system info + job list (manual refresh), stop bridge
+- **submit jobs** (line-based argv editor, validation, idempotency keys),
+  **job detail** (full record, 2 s auto-refresh while active), **cancel**
+  with confirmation
 - spec conformance: `python3 tests/spec_conformance.py` (also in CI)
 
-Job submission UI, live SSE output streaming, files, tools: Phases 5–9.
+Live SSE output streaming, files, tools: Phases 6–9.
