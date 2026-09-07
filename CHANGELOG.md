@@ -6,6 +6,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Added — Phase 4: Android app shell & connection wizard (2026-09-07)
+- **`android/`** — native app (Kotlin + Compose, `dev.trmx.gui`, minSdk 26 /
+  target 34): single-activity state-driven UI, 3-consent wizard →
+  `INSTALL_PY → INSTALL → PAIR → START → handshake` sequence per
+  CONTROL-PLANE.md §4 (with warm-start reconnect, per-step failure states,
+  skip/retry), dashboard with system info + job list + stop bridge.
+- **`ControlOps` / `IntentControlPlane`** — the 8 control-plane ops, argv
+  construction with loud placeholder validation + Termux-sandbox path
+  invariant; intent sends map to CONTROL-PLANE §5 error states.
+- **`BridgeClient` / `Handshaker`** — pure-JVM TRMX-P/1 client (both required
+  headers on every request, error-envelope parsing) + handshake poller.
+- **JVM unit tests** — MockWebServer wire tests using byte-identical
+  `fixtures/v1` payloads, wizard state machine, handshake poller, op-table
+  invariants.
+- **CI workflow for the app** — the sandbox token cannot create
+  `.github/workflows/` files (no `workflows` permission), so the ready-made
+  workflow is committed at `docs/ci/android-workflow.yml` with one-step
+  activation instructions; once active it is the app's compile gate
+  (assembleDebug + unit tests + spec conformance + APK artifact on every push).
+- **`tests/spec_conformance.py`** — static conformance gate: Kotlin sources
+  vs CONTROL-PLANE.md §3 op table, PROTOCOL.md routes, fixture payloads,
+  manifest declarations.
+- **`docs/decisions/ADR-006`** — verification-without-local-toolchain
+  strategy, version matrix, scope decisions.
+
 ### Added — Phase 3: Bootstrap automation (2026-09-07)
 - **`termux/install.sh`** — one-command installer driven by `RUN_COMMAND`
   intents: remote (`--base URL`, default GitHub raw) and local (`--source`)

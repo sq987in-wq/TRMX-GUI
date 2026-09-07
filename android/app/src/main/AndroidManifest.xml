@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Control plane: lets us send RUN_COMMAND intents to Termux.
+         Granted by the user in OUR App Info → Permissions (consent screen 2). -->
+    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
+
+    <!-- Package visibility (Android 11+): we need to see Termux to check
+         it is installed before offering the wizard. -->
+    <queries>
+        <package android:name="com.termux" />
+    </queries>
+
+    <application
+        android:label="TRMX"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.TRMX">
+        <!-- Launcher icon intentionally omitted (system default) — real icon in Phase 8. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

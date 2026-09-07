@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+"""Spec conformance: the Android sources vs the frozen contracts.
+
+This is the sandbox-side gate for Phase 4+ (no JDK/SDK available here —
+ADR-006). It cannot prove the Kotlin compiles; CI (GitHub Actions) does
+that. What it proves is that the app cannot silently drift from:
+
+  - docs/CONTROL-PLANE.md §3  — the 8 intent operations (id, path, argv)
+  - docs/PROTOCOL.md          — every data-plane route the app calls exists
+  - fixtures/v1/              — embedded test payloads are byte-identical
+  - AndroidManifest.xml       — permission + package-visibility declarations
+
+Run:  python3 tests/spec_conformance.py     (also runs in GitHub Actions)
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+FAILURES: list[str] = []
+
+
+def check(name: str, ok: bool, detail: str = "") -> None:
+    print(f"  {'PASS' if ok else 'FAIL'}  {name}" + (f" — {detail}" if detail and not ok else ""))
+    if not ok:
+        FAILURES.append(f"{name}: {detail}")
+
+
+# --- 1. CONTROL-PLANE.md §3 op table ↔ ControlOps.kt SPECS -----------------
+
+PREFIX = "/data/data/com.termux/files/usr"
+TRMX = "/data/data/com.termux/files/home/.trmx"
+
+
+def doc_ops() -> dict[str, tuple[str, list[str]]]:
+    md = (REPO / "docs" / "CONTROL-PLANE.md").read_text("utf-8")
+    ops: dict[str, tuple[str, list[str]]] = {}
+    for line in md.splitlines():
+        m = re.match(r"^\| `([A-Z_]+)` \| `([^`]+)` \| `(\[.*?\])` \|", line)
+        if not m:
+            continue
+        op, path, args = m.group(1), m.group(2), m.group(3).replace(r"\|", "|")
+        path = (path.replace("$PREFIX", PREFIX).replace("$TRMX", TRMX))
+        ops[op] = (path, json.loads(args))
+    return ops
+
+
+def kotlin_specs() -> dict[str, tuple[str, list[str]]]:
+    kt = (REPO / "android" / "app" / "src" / "main" / "java" / "dev" / "trmx" / "gui"
+          / "control" / "ControlOps.kt").read_text("utf-8")
+    # Kotlin string templates reference the file's own compile-time constants —
+    # resolve them the way the compiler does.
+    kt = (kt.replace("$TERMUX_PREFIX", PREFIX)
+            .replace("$TRMX_HOME", TRMX)
+            .replace("$TERMUX_HOME", "/data/data/com.termux/files/home"))
+    specs: dict[str, tuple[str, list[str]]] = {}
+    for m in re.finditer(
+            r'OpSpec\(\s*"([A-Z_]+)",\s*"([^"]+)",\s*listOf\((.*?)\),\s*"',
+            kt, re.S):
+        op, path, args_src = m.group(1), m.group(2), m.group(3)
+        args = re.findall(r'"((?:[^"\\]|\\.)*)"', args_src)
+        specs[op] = (path, [a.replace('\\"', '"') for a in args])
+    return specs
+
+
+print("1. control-plane op table (docs/CONTROL-PLANE.md §3 ↔ ControlOps.kt)")
+doc, kt = doc_ops(), kotlin_specs()
+check("both sides define the same 8 op ids",
+      sorted(doc) == sorted(kt) and len(doc) == 8, f"doc={sorted(doc)} kotlin={sorted(kt)}")
+for op in sorted(set(doc) & set(kt)):
+    d_path, d_args = doc[op]
+    k_path, k_args = kt[op]
+    check(f"{op}: path matches", d_path == k_path, f"doc={d_path} kt={k_path}")
+    check(f"{op}: argv matches", d_args == k_args, f"doc={d_args} kt={k_args}")
+
+kt_src = (REPO / "android" / "app" / "src" / "main" / "java" / "dev" / "trmx" / "gui"
+          / "control" / "ControlOps.kt").read_text("utf-8")
+specs_block = re.search(r"val SPECS: List<OpSpec> = listOf\((.*)\)\n\n    fun spec",
+                        kt_src, re.S).group(1)
+check("token placeholder appears only in the PAIR op",
+      specs_block.count("<TOKEN>") == 1 and "<TOKEN>" in kotlin_specs()["PAIR"][1][1],
+      f"count in SPECS block={specs_block.count('<' + 'TOKEN' + '>')}")
+
+print("2. data-plane routes (BridgeClient.kt ↔ docs/PROTOCOL.md)")
+client_kt = (REPO / "android" / "app" / "src" / "main" / "java" / "dev" / "trmx" / "gui"
+             / "net" / "BridgeClient.kt").read_text("utf-8")
+protocol = (REPO / "docs" / "PROTOCOL.md").read_text("utf-8")
+routes = {r.split("?")[0] for r in re.findall(r'"(/v1/[a-zA-Z0-9/?=&$_-]+)"', client_kt)}
+check("app calls at least the handshake + jobs routes",
+      {"/v1/system/info", "/v1/jobs"} <= routes, f"found={sorted(routes)}")
+for r in sorted(routes):
+    check(f"route {r} is defined in PROTOCOL.md", r in protocol)
+check("client sends the protocol handshake header",
+      '"X-TRMX-Protocol"' in client_kt and 'PROTOCOL_VERSION = "1"' in client_kt)
+check("client sends bearer auth", '"Authorization", "Bearer $token"' in client_kt)
+
+# --- 3. embedded fixture payloads are byte-identical ------------------------
+
+print("3. embedded fixture payloads (BridgeClientTest.kt ↔ fixtures/v1)")
+test_kt = (REPO / "android" / "app" / "src" / "test" / "java" / "dev" / "trmx" / "gui"
+           / "BridgeClientTest.kt").read_text("utf-8")
+blocks = [b.strip() for b in re.findall(r'"""(.*?)"""', test_kt, re.S)]
+fixtures = {p.name: p.read_text("utf-8").strip()
+            for p in (REPO / "fixtures" / "v1").glob("*.json")}
+check("exactly three embedded payloads found", len(blocks) == 3, f"got {len(blocks)}")
+for b in blocks:
+    matches = [name for name, text in fixtures.items() if text == b]
+    check("embedded payload is byte-identical to a fixture",
+          len(matches) == 1, f"matches={matches}")
+
+# --- 4. manifest declarations ----------------------------------------------
+
+print("4. AndroidManifest.xml declarations")
+manifest = (REPO / "android" / "app" / "src" / "main" / "AndroidManifest.xml").read_text("utf-8")
+check("RUN_COMMAND permission requested",
+      'android:name="com.termux.permission.RUN_COMMAND"' in manifest)
+check("package visibility for com.termux declared",
+      '<package android:name="com.termux" />' in manifest)
+
+# --- verdict ----------------------------------------------------------------
+
+print()
+if FAILURES:
+    print(f"CONFORMANCE FAILED — {len(FAILURES)} problem(s):")
+    for f in FAILURES:
+        print(f"  - {f}")
+    sys.exit(1)
+print("CONFORMANCE PASSED — app sources match the frozen contracts.")

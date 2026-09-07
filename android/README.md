@@ -1,11 +1,63 @@
-# android/ — TRMX-GUI Android app
+# android/ — TRMX-GUI native app
 
-**Status: reserved. No code until Phase 4 (Android PoC), which starts after Phase 1 (protocol freeze) review and Phase 2–3 (bridge PoC + bootstrap automation).**
+**Status: Phase 4 (app shell + connection wizard) — sources complete, compiled by CI ([ADR-006](../docs/decisions/ADR-006-android-shell.md)).**
 
-Planned (per `docs/ARCHITECTURE.md` and the Phase 0 report §E):
+Native Android app (Kotlin + Jetpack Compose). The app is a *disposable control
+plane*: it drives Termux through `RUN_COMMAND` intents (control plane, see
+[docs/CONTROL-PLANE.md](../docs/CONTROL-PLANE.md)) and talks to `trmx-bridge`
+over loopback HTTP (data plane, TRMX-P/1). Termux does the work.
 
-- Kotlin 2.x, Jetpack Compose + Material 3, single-activity MVVM
-- `BridgeClient` (OkHttp + kotlinx.serialization, SSE/chunked streaming, TRMX-P/1)
-- `IntentControlPlane` (Termux `RUN_COMMAND` intents)
-- Room (history/tool cache) · DataStore (settings) · Keystore-wrapped token
-- minSdk 26, targetSdk latest; tests validate against `fixtures/v1/`
+```
+app/src/main/java/dev/trmx/gui/
+  MainActivity.kt            single-activity Compose host, state-driven screens
+  AppViewModel.kt            orchestrates both planes; thin by design
+  control/ControlOps.kt      the 8 intent ops — mirror of CONTROL-PLANE.md §3 (conformance-tested)
+  control/IntentControlPlane.kt  intent assembly + send, permission handling
+  net/BridgeClient.kt        TRMX-P/1 client (OkHttp, pure JVM, MockWebServer-tested)
+  net/Handshaker.kt          START→poll-until-answer logic
+  wizard/WizardEngine.kt     pure first-run state machine
+  store/TokenStore.kt        pairing token + install base (private prefs; Phase 10: crypto store)
+  ui/                        WizardScreen (3 consents + 5 steps), DashboardScreen, theme
+```
+
+## Building
+
+```sh
+# locally: JDK 17 + any recent Android Studio (or SDK 34 + Gradle 8.7)
+cd android && gradle :app:assembleDebug
+# unit tests
+gradle :app:testDebugUnitTest
+```
+
+The repo deliberately does not commit a `gradle-wrapper.jar` (generated
+artifact); CI installs Gradle 8.7 directly. Locally, run `gradle wrapper` once
+or open the project in Android Studio and let it create the wrapper.
+
+**CI activation is a one-time manual step** (the automation token pushing
+this branch cannot create `.github/workflows/` files): copy
+[`docs/ci/android-workflow.yml`](../docs/ci/android-workflow.yml) to
+`.github/workflows/android.yml` — exact steps in
+[docs/ci/README.md](../docs/ci/README.md). After that, every push builds the
+APK in GitHub Actions and uploads it as an artifact — that is the compile
+gate, since the dev sandbox has no JDK/Android SDK.
+
+## Version matrix (ADR-006)
+
+| Component | Version |
+|---|---|
+| Gradle | 8.7 |
+| Android Gradle Plugin | 8.5.1 |
+| Kotlin / serialization plugin | 1.9.24 |
+| Compose compiler | 1.5.14 |
+| Compose BOM | 2024.06.00 |
+| compileSdk / targetSdk / minSdk | 34 / 34 / 26 |
+
+## What works now (Phase 4)
+
+- 3-consent wizard → `INSTALL_PY → INSTALL → PAIR → START → handshake`
+  (CONTROL-PLANE.md §4), warm-start reconnect, per-step failure states with
+  actionable hints
+- dashboard: system info + job list (manual refresh), stop bridge
+- spec conformance: `python3 tests/spec_conformance.py` (also in CI)
+
+Job submission UI, live SSE output streaming, files, tools: Phases 5–9.

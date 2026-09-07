@@ -1,4 +1,15 @@
+# python
 __pycache__/
 *.pyc
 .pytest_cache/
 *.log
+
+# android / gradle (CI and Android Studio artifacts — never commit)
+.gradle/
+local.properties
+.idea/
+*.iml
+.kotlin/
+captures/
+*.jks
+*.keystore

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose-only app: no XML theme machinery needed, just a clean base. -->
+    <style name="Theme.TRMX" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

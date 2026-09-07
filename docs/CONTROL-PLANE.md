@@ -47,7 +47,7 @@ Paths on device: `$PREFIX = /data/data/com.termux/files/usr`,
 |---|---|---|---|---|
 | `INSTALL_PY` | `$PREFIX/bin/pkg` | `["install","-y","python"]` | bootstrap, bridge reports python missing | subsequent ops succeed |
 | `INSTALL` | `$PREFIX/bin/bash` | `["-c", "curl -fsSL <BASE>/install.sh \| sh -s -- --base <BASE>"]` | bootstrap / upgrade (app passes pinned `--base` + `--sha256` URL) | `$TRMX/trmx-bridge.py` + `$TRMX/trmx` exist (app can't see them; verified by next op + data plane) |
-| `PAIR` | `$TRMX/trmx` | `["pair", "<token>"]` | first pairing / re-pairing after unpair | data plane auth starts succeeding |
+| `PAIR` | `$TRMX/trmx` | `["pair", "<TOKEN>"]` | first pairing / re-pairing after unpair | data plane auth starts succeeding |
 | `START` | `$TRMX/trmx` | `["start"]` | data plane down, bridge believed stopped | port answers `/v1/system/info` |
 | `STOP` | `$TRMX/trmx` | `["stop"]` | user-initiated backend shutdown | port closed |
 | `STATUS` | `$TRMX/trmx` | `["status"]` | diagnostics (rare — data-plane probe is preferred) | exit/output |

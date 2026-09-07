@@ -14,8 +14,9 @@ TRMX-GUI does not replace Termux — it drives it: run and monitor jobs, stream 
 | **Phase 0 — Feasibility & Architecture Discovery** | ✅ **Complete & approved** (decisions in Appendix 3) |
 | **Phase 1 — Protocol freeze & project constitution** | ✅ **Complete** (TRMX-P/1, ADR-001…003) |
 | **Phase 2 — Termux bridge PoC** | ✅ **Code complete — 19/19 tests + smoke demo pass (sandbox); on-device verification in Termux pending** |
-| **Phase 3 — Bootstrap automation** | ✅ **Complete — installer + autostart + frozen intent contract; 12/12 bootstrap tests, 31/31 total (sandbox)** |
-| Phases 4–12 | 🚫 not started (Phase 4 = native Android app shell + connection wizard) |
+| **Phase 3 — Bootstrap automation** | ✅ **Complete — installer + autostart + frozen intent contract; 32/32 tests (sandbox)** |
+| **Phase 4 — Android app shell** | 🔨 **Sources complete + spec-conformance passed; compile gate = CI, pending one-time activation ([docs/ci](docs/ci/README.md)); on-device e2e pending** |
+| Phases 5–12 | 🚫 not started (Phase 5 = job submission & management UI) |
 
 **Phase 0 decisions:** me + friends distribution via GitHub releases · Termux from GitHub Releases · target Android 14+ (minSdk 26) · hybrid GUI (Tool Registry + universal runner) · device-local-only V1 transport · core-first V1 scope. See [Appendix 3 of the report](docs/PHASE-0-DISCOVERY-REPORT.md#appendix-3--phase-0-sign-off-inputs-recorded-2026-09-07).
 
@@ -25,7 +26,7 @@ TRMX-GUI does not replace Termux — it drives it: run and monitor jobs, stream 
 - [docs/PROTOCOL.md](docs/PROTOCOL.md) — **TRMX-P/1**: the wire contract between app and bridge (every route, error code, event, limit, versioning rule)
 - [docs/CONTROL-PLANE.md](docs/CONTROL-PLANE.md) — **the frozen `RUN_COMMAND` intent interface**: 8 operations, consent preconditions, first-run/warm-start/upgrade sequences, error-state mapping
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — living architecture summary
-- [docs/decisions/](docs/decisions/) — ADR decision log (ADR-001 architecture, ADR-002 protocol core, ADR-003 license, ADR-004 bridge PoC, ADR-005 bootstrap automation)
+- [docs/decisions/](docs/decisions/) — ADR decision log (ADR-001 architecture, ADR-002 protocol core, ADR-003 license, ADR-004 bridge PoC, ADR-005 bootstrap automation, ADR-006 Android shell)
 - [fixtures/v1/](fixtures/v1/) — normative contract fixtures shared by both test suites
 - [CHANGELOG.md](CHANGELOG.md) · [LICENSE](LICENSE) (MIT)
 
