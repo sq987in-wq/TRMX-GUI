@@ -7,6 +7,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 ## [Unreleased]
 
 ### Added — Phase 4: Android app shell & connection wizard (2026-09-07)
+- **Compile gate closed (CI round 2, `a362d1c`):** the app builds and all JVM
+  unit tests pass on GitHub Actions; debug APK + test results are uploaded as
+  artifacts. Round 1 caught two real bugs, both fixed: a nested-comment
+  swallow in `Models.kt` (Kotlin block comments nest — a glob in a comment
+  ate the file) and an illegal suspend-callable default parameter in
+  `Handshaker`. The conformance suite now includes a Kotlin comment-balance
+  audit so the first bug class is caught before Gradle runs.
 - **`android/`** — native app (Kotlin + Compose, `dev.trmx.gui`, minSdk 26 /
   target 34): single-activity state-driven UI, 3-consent wizard →
   `INSTALL_PY → INSTALL → PAIR → START → handshake` sequence per

@@ -1,6 +1,6 @@
 # android/ — TRMX-GUI native app
 
-**Status: Phase 4 (app shell + connection wizard) — sources complete, compiled by CI ([ADR-006](../docs/decisions/ADR-006-android-shell.md)).**
+**Status: Phase 4 (app shell + connection wizard) — COMPILED & UNIT-TESTED GREEN in CI ([run 34146966489](https://github.com/sq987in-wq/TRMX-GUI/actions/runs/34146966489)); on-device e2e pending ([ADR-006](../docs/decisions/ADR-006-android-shell.md)).**
 
 Native Android app (Kotlin + Jetpack Compose). The app is a *disposable control
 plane*: it drives Termux through `RUN_COMMAND` intents (control plane, see

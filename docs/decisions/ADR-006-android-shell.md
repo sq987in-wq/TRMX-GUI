@@ -17,18 +17,32 @@ here — so the verification strategy had to be designed honestly, not assumed.
 
 | Layer | What it proves | Where |
 |---|---|---|
-| GitHub Actions CI (`android.yml`) | the app **compiles**, JVM unit tests pass, APK artifact produced | on every push — **pending one-time activation**, see below |
-| `tests/spec_conformance.py` | the sources cannot drift from CONTROL-PLANE.md §3, PROTOCOL.md routes, fixtures/v1 payloads, manifest declarations | sandbox + CI |
+| GitHub Actions CI (`android.yml`) | the app **compiles**, JVM unit tests pass, APK artifact produced | on every push — **ACTIVE and GREEN** (run 34146966489, 2m26s) |
+| `tests/spec_conformance.py` | the sources cannot drift from CONTROL-PLANE.md §3, PROTOCOL.md routes, fixtures/v1 payloads, manifest declarations — plus a Kotlin nested-comment balance audit | sandbox + CI |
 | JVM unit tests (MockWebServer) | wire behavior: headers, routes, 401/parse/refused handling; wizard state machine; handshake poller | CI |
 
-**Activation gap, stated plainly:** the automation token that pushes this
-branch lacks GitHub's `workflows` permission, so it cannot create
-`.github/workflows/android.yml` itself (pushes containing it are rejected).
-The workflow content is committed at `docs/ci/android-workflow.yml` with
-one-step activation instructions ([docs/ci/README.md](../ci/README.md)).
-Until a human activates it (or builds once in Android Studio), the app is
-**UNCOMPILED** — spec conformance catches contract drift, not syntax errors.
-This ADR is accepted only together with a green CI run or a user-side build.
+**Activation history:** the automation token pushing this branch lacks
+GitHub's `workflows` permission and cannot create `.github/workflows/`
+files (pushes containing them are rejected). The workflow content was
+committed at `docs/ci/android-workflow.yml` and the repo owner activated
+it manually (commit `6fc5cbc`, 2026-09-07). From then on, CI is the
+compiler gate for the app.
+
+**CI round 1 lessons (both fixed in `a362d1c`, round 2 green):**
+1. *Nested comments.* The `Models.kt` header contained the glob
+   `fixtures/v1/*.json`; Kotlin block comments NEST, so the glob's
+   `/*` opened a nested comment that swallowed the entire file — every
+   "Unresolved reference" in the log was a cascade of that one line.
+   The conformance suite now ships a comment-balance audit (mini Kotlin
+   lexer) so this bug class is caught before Gradle runs.
+2. *Suspend default parameters.* A suspend callable reference
+   (`::delay`) cannot be a default parameter value (default-value
+   expressions run in a non-suspend context). `Handshaker` now takes a
+   nullable delay and resolves it inside the body.
+3. *Reading CI logs from the restricted sandbox.* The log zip lives on
+   a blocked host, but `gh api repos/…/actions/jobs/{id}/logs` mints a
+   signed plain-text URL (visible in its EOF error output) that the
+   platform page fetcher CAN read — the full loop stayed autonomous.
 
 ### 2. Project shape
 

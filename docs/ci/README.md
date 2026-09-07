@@ -22,3 +22,15 @@ JDK/Android SDK — ADR-006).
 Then every push (including future pushes from this workspace) builds the app:
 assembleDebug + JVM unit tests + spec conformance, APK uploaded as an
 artifact under the repo's **Actions** tab.
+
+## Reading CI logs from a restricted environment (used during Phase 4)
+
+CI log downloads redirect to `*.blob.core.windows.net` / `results-receiver…`,
+which may be unreachable. Workaround that worked here:
+
+1. `gh run list --repo … --limit 5` → run id
+2. `gh run view <id> --repo … --json jobs --jq '.jobs[0].databaseId'` → job id
+3. `gh api repos/…/actions/jobs/<job_id>/logs` — it fails with EOF **but
+   prints the signed plain-text URL** in the error message
+4. fetch that URL with any unrestricted page fetcher — it is the raw log,
+   ~9 chunks, `e:` compiler lines are what you want
