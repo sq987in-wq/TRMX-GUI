@@ -302,15 +302,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 while (isActive) {
                     when (val r = client().getJob(jobId)) {
                         is BridgeResult.Success -> {
-                            _detail.update { it.copy(job = r.data, error = null) }
+                            _detail.update { it?.copy(job = r.data, error = null) }
                             if (r.data.status in TERMINAL) break
                         }
                         is BridgeResult.HttpError -> {
-                            _detail.update { it.copy(error = "HTTP ${r.status}: ${r.code}") }
+                            _detail.update { it?.copy(error = "HTTP ${r.status}: ${r.code}") }
                             break
                         }
                         is BridgeResult.NetworkError -> {
-                            _detail.update { it.copy(error = "bridge unreachable: ${r.cause.message}") }
+                            _detail.update { it?.copy(error = "bridge unreachable: ${r.cause.message}") }
                         }
                     }
                     delay(DETAIL_POLL_MS)
@@ -320,14 +320,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun cancelJob(jobId: String) {
-        _detail.update { it.copy(cancelling = true) }
+        _detail.update { it?.copy(cancelling = true) }
         viewModelScope.launch {
             when (val r = client().cancelJob(jobId)) {
-                is BridgeResult.Success -> _detail.update { it.copy(job = r.data, cancelling = false) }
+                is BridgeResult.Success -> _detail.update { it?.copy(job = r.data, cancelling = false) }
                 is BridgeResult.HttpError ->
-                    _detail.update { it.copy(cancelling = false, error = "HTTP ${r.status}: ${r.code} — ${r.message}") }
+                    _detail.update { it?.copy(cancelling = false, error = "HTTP ${r.status}: ${r.code} — ${r.message}") }
                 is BridgeResult.NetworkError ->
-                    _detail.update { it.copy(cancelling = false, error = "bridge unreachable: ${r.cause.message}") }
+                    _detail.update { it?.copy(cancelling = false, error = "bridge unreachable: ${r.cause.message}") }
             }
         }
     }
