@@ -1,0 +1,14 @@
+{
+  "name": "Download: Cats documentary",
+  "type": "tool",
+  "tool": "yt-dlp",
+  "args": {
+    "url": "https://example.com/watch?v=xyz",
+    "format": "mp4",
+    "outdir": "~/downloads"
+  },
+  "cwd": "~",
+  "env": null,
+  "timeout_s": 7200,
+  "idempotency_key": "8f14e45f-6ea5-4bdc-b0b7-9b2f1c7d3e9a"
+}

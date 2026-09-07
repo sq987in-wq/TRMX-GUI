@@ -1,0 +1,8 @@
+{
+  "path": "~/downloads",
+  "entries": [
+    { "name": "video.mp4", "type": "file", "size": 104857600, "mtime": "2026-09-07T09:12:44Z", "mode": "-rw-r--r--", "target": null },
+    { "name": "music", "type": "dir", "size": 4096, "mtime": "2026-09-06T18:02:10Z", "mode": "drwx------", "target": null },
+    { "name": "latest.mkv", "type": "symlink", "size": 28, "mtime": "2026-09-06T18:02:10Z", "mode": "lrwxrwxrwx", "target": "~/downloads/music/latest.mkv" }
+  ]
+}

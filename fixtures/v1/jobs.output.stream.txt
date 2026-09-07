@@ -1,0 +1,27 @@
+retry: 3000
+
+event: stdout
+id: 4819
+data: {"job_id":"J-1A2B","seq":4819,"text":"[download]   1.2% of ~123.45MiB at 1.23MiB/s ETA 01:39\n"}
+
+event: stdout
+id: 4820
+data: {"job_id":"J-1A2B","seq":4820,"text":"[download]  42.1% of ~123.45MiB at 1.19MiB/s ETA 01:00\n"}
+
+event: stderr
+id: 4821
+data: {"job_id":"J-1A2B","seq":4821,"text":"WARNING: fp parameter is deprecated\n"}
+
+event: status
+id: 4822
+data: {"job_id":"J-1A2B","seq":4822,"status":"RUNNING","exit_code":null,"signal":null,"error":null,"ended_at":null,"progress_pct":42.1,"progress_detail":"[download]  42.1% of ~123.45MiB"}
+
+: ping
+
+event: stdout
+id: 4823
+data: {"job_id":"J-1A2B","seq":4823,"text":"[download] 100% of 123.45MiB in 06:51\n"}
+
+event: status
+id: 4824
+data: {"job_id":"J-1A2B","seq":4824,"status":"COMPLETED","exit_code":0,"signal":null,"error":null,"ended_at":"2026-09-07T13:47:02.481Z","progress_pct":100.0,"progress_detail":"[download] 100% of 123.45MiB in 06:51"}

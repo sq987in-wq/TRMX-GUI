@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "ARG_INVALID",
+    "message": "Value 'mp9' is not one of the allowed enum values.",
+    "field": "args.format",
+    "details": { "allowed": ["mp4", "mkv", "best"] }
+  }
+}

@@ -11,32 +11,37 @@ TRMX-GUI does not replace Termux — it drives it: run and monitor jobs, stream 
 
 | Phase | State |
 |---|---|
-| **Phase 0 — Feasibility & Architecture Discovery** | ✅ **Complete — decisions recorded (Appendix 3); awaiting final architecture approval** |
-| Phase 1 — Protocol freeze | ⏳ blocked on Phase 0 sign-off |
-| Phases 2–12 — Implementation | 🚫 not started (by design: no implementation code before architecture approval) |
+| **Phase 0 — Feasibility & Architecture Discovery** | ✅ **Complete & approved** (decisions in Appendix 3) |
+| **Phase 1 — Protocol freeze & project constitution** | ✅ **Draft complete — awaiting review** |
+| Phases 2–12 — Implementation | 🚫 not started (Phase 2 bridge PoC opens after Phase 1 review) |
 
 **Phase 0 decisions:** me + friends distribution via GitHub releases · Termux from GitHub Releases · target Android 14+ (minSdk 26) · hybrid GUI (Tool Registry + universal runner) · device-local-only V1 transport · core-first V1 scope. See [Appendix 3 of the report](docs/PHASE-0-DISCOVERY-REPORT.md#appendix-3--phase-0-sign-off-inputs-recorded-2026-09-07).
 
-## Read this first
+## Documentation
 
-- **[docs/PHASE-0-DISCOVERY-REPORT.md](docs/PHASE-0-DISCOVERY-REPORT.md)** — the complete Phase 0 discovery report: feasibility verdict, the *maximum practical control boundary*, communication-architecture comparison, full system design (Termux side + Android side), security/threat model, feature map, phased roadmap, testing strategy, risks, and open questions.
+- [docs/PHASE-0-DISCOVERY-REPORT.md](docs/PHASE-0-DISCOVERY-REPORT.md) — feasibility verdict, *maximum practical control boundary*, communication comparison, full system architecture, threat model, feature map, 13-phase roadmap, testing strategy, risks
+- [docs/PROTOCOL.md](docs/PROTOCOL.md) — **TRMX-P/1**: the wire contract between app and bridge (every route, error code, event, limit, versioning rule)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — living architecture summary
+- [docs/decisions/](docs/decisions/) — ADR decision log (ADR-001 architecture, ADR-002 protocol core, ADR-003 license)
+- [fixtures/v1/](fixtures/v1/) — normative contract fixtures shared by both test suites
+- [CHANGELOG.md](CHANGELOG.md) · [LICENSE](LICENSE) (MIT)
 
 ## Architecture at a glance
 
 - **Control plane** — Termux's opt-in `RUN_COMMAND` intent API (bootstrap, install, pairing, start/stop), protected by the `com.termux.permission.RUN_COMMAND` permission and the user's `allow-external-apps` opt-in.
-- **Data plane** — a single-file, stdlib-only Python daemon (`trmx-bridge`) inside Termux serving a token-authenticated JSON API with chunked/SSE streaming on `127.0.0.1` (jobs, live logs, files, tool registry, metrics).
+- **Data plane** — a single-file, stdlib-only Python daemon (`trmx-bridge`) inside Termux serving a token-authenticated JSON API with chunked/SSE streaming on `127.0.0.1` (jobs, live logs, files, tool registry, metrics), per the TRMX-P/1 protocol.
 - **Philosophy** — hybrid GUI: schema-driven forms for known tools + a structured universal runner + (V2) a PTY terminal.
 - **Resilience** — the bridge is the source of truth (SQLite + log ring buffers), so jobs survive the Android app being killed; the app is a disposable, reconnecting client.
 
-## Repository layout (planned)
+## Repository layout
 
 ```
-docs/        discovery report, protocol spec, ADRs (decision log)
+docs/        discovery report, protocol spec, living architecture, ADRs
+fixtures/    normative TRMX-P/1 contract fixtures (shared by both test suites)
 android/     native Android app (Kotlin + Jetpack Compose)      — Phase 4+
 termux/      trmx-bridge daemon, trmx CLI, install.sh, schemas  — Phase 2+
-fixtures/    shared contract-test fixtures                       — Phase 1+
 ```
 
 ## Contributing / building
 
-Nothing to build yet — implementation begins after the Phase 0 architecture is approved. The project follows a strict *architecture → smallest working proof → verified communication → controlled execution → reliable jobs → polish → security → testing → production* order.
+Nothing to build yet — implementation begins with the Phase 2 bridge PoC, gated on Phase 1 review. The project follows a strict *architecture → smallest working proof → verified communication → controlled execution → reliable jobs → polish → security → testing → production* order, documented in the Phase 0 report §H.

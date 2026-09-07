@@ -1,0 +1,23 @@
+{
+  "id": "yt-dlp",
+  "name": "Video Downloader (yt-dlp)",
+  "description": "Download videos from thousands of sites.",
+  "binary": "yt-dlp",
+  "risk_tier": "safe",
+  "progress_regex": "\\[download\\]\\s+(\\d{1,3}(?:\\.\\d+)?)%",
+  "fixed_argv": ["--newline"],
+  "args": [
+    { "name": "url", "label": "Video URL", "type": "url", "required": true,
+      "help": "The page or direct video URL." },
+    { "name": "format", "label": "Quality", "type": "enum", "required": false,
+      "enum": ["mp4", "mkv", "best"], "default": "mp4", "argv": ["-f", "{value}"] },
+    { "name": "audio", "label": "Audio only", "type": "bool", "default": false, "argv": ["-x"] },
+    { "name": "rate", "label": "Rate limit", "type": "string", "required": false,
+      "pattern": "^\\d+[KM]$", "argv": ["-r", "{value}"] },
+    { "name": "outdir", "label": "Output folder", "type": "path", "path_kind": "dir",
+      "default": "~/downloads", "argv": ["-P", "{value}"] }
+  ],
+  "examples": [
+    { "label": "MP4, best quality", "args": { "url": "https://example.com/watch?v=xyz", "format": "mp4" } }
+  ]
+}

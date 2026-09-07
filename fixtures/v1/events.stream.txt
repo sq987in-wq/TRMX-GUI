@@ -1,0 +1,15 @@
+retry: 3000
+
+: ping
+
+event: job.updated
+id: 1041
+data: {"job_id":"J-1A2C","name":"Nightly backup","type":"argv","argv":["tar","czf","~/backups/home-2026-09-07.tgz","~/projects"],"script":null,"cwd":"~","env":null,"status":"RUNNING","created_at":"2026-09-07T13:46:00.101Z","started_at":"2026-09-07T13:46:00.512Z","ended_at":null,"pid":12901,"pgid":12901,"exit_code":null,"signal":null,"cancel_requested":false,"cancel_reason":null,"error":null,"timeout_s":null,"progress_pct":null,"progress_detail":null,"stdout_bytes":0,"stderr_bytes":132,"log_seq":12,"log_truncated":false,"idempotency_key":null}
+
+event: job.updated
+id: 1042
+data: {"job_id":"J-1A2B","name":"Download: Cats documentary","type":"tool","tool":"yt-dlp","argv":["yt-dlp","--newline","-f","mp4","-P","~/downloads","https://example.com/watch?v=xyz"],"script":null,"cwd":"~/downloads","env":null,"status":"COMPLETED","created_at":"2026-09-07T13:40:11.002Z","started_at":"2026-09-07T13:40:11.480Z","ended_at":"2026-09-07T13:47:02.481Z","pid":null,"pgid":null,"exit_code":0,"signal":null,"cancel_requested":false,"cancel_reason":null,"error":null,"timeout_s":7200,"progress_pct":100.0,"progress_detail":"[download] 100% of 123.45MiB in 06:51","stdout_bytes":20481,"stderr_bytes":0,"log_seq":4824,"log_truncated":false,"idempotency_key":"8f14e45f-6ea5-4bdc-b0b7-9b2f1c7d3e9a"}
+
+event: bridge.stopping
+id: 1043
+data: {"reason":"restart","resume_hint_s":5}

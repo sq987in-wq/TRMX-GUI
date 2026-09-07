@@ -1,0 +1,8 @@
+{
+  "roots": ["~", "~/storage"],
+  "deny_write": ["$PREFIX"],
+  "log_ring_mb": 2,
+  "max_concurrent_jobs": 4,
+  "queue_depth": 32,
+  "cancel_grace_ms": 5000
+}

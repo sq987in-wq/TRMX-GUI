@@ -1,0 +1,13 @@
+{
+  "bridge_version": "1.0.0",
+  "protocol_versions": [1],
+  "uptime_s": 3600,
+  "now": "2026-09-07T13:47:02.481Z",
+  "load": { "jobs_running": 2, "jobs_queued": 0, "loadavg": [0.42, 0.35, 0.31] },
+  "memory": { "total_mb": 7420, "free_mb": 2180 },
+  "storage": { "home_free_mb": 10240, "shared_available": true },
+  "termux": { "home": "/data/data/com.termux/files/home", "prefix": "/data/data/com.termux/files/usr" },
+  "caps": { "max_concurrent_jobs": 4, "queue_depth": 32, "log_ring_mb": 2 },
+  "features": { "termux_api": true, "runit": true, "scheduler": false },
+  "tools_detected": 17
+}

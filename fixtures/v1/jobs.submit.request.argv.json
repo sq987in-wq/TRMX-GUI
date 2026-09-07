@@ -1,0 +1,9 @@
+{
+  "name": "Re-encode lecture video",
+  "type": "argv",
+  "argv": ["ffmpeg", "-i", "~/downloads/lecture.mkv", "-c:v", "libx264", "-preset", "fast", "~/downloads/lecture.mp4"],
+  "cwd": "~",
+  "env": null,
+  "timeout_s": 7200,
+  "idempotency_key": "8f14e45f-6ea5-4bdc-b0b7-9b2f1c7d3e9a"
+}

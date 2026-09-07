@@ -1,0 +1,6 @@
+{
+  "op": "delete",
+  "path": "~/downloads/old-stuff",
+  "recursive": true,
+  "confirm": true
+}
