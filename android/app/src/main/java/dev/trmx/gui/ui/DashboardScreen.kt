@@ -1,18 +1,17 @@
 package dev.trmx.gui.ui
 
 /*
- * Phase 4 dashboard: bridge status + system info + job list, manual
- * refresh. Live streaming output, submission UI and file management are
- * Phases 5–7 (core-first scope).
+ * Dashboard: bridge status + system info + job list, manual refresh,
+ * job submission (Phase 5). Live streaming output is Phase 6.
  */
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -23,6 +22,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -31,11 +34,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.trmx.gui.DashboardState
+import dev.trmx.gui.SubmitFormState
 import dev.trmx.gui.model.JobSummary
 
 private val STATUS_COLORS = mapOf(
     "RUNNING" to Color(0xFF4CAF50),
     "QUEUED" to Color(0xFFFFC107),
+    "CANCELLING" to Color(0xFFFF9800),
     "COMPLETED" to Color(0xFF2196F3),
     "FAILED" to Color(0xFFF44336),
     "CANCELLED" to Color(0xFF9E9E9E),
@@ -45,10 +50,21 @@ private val STATUS_COLORS = mapOf(
 @Composable
 fun DashboardScreen(
     state: DashboardState,
+    submitForm: SubmitFormState,
     onRefresh: () -> Unit,
     onStopBridge: () -> Unit,
     onRerunWizard: () -> Unit,
+    onJobClick: (String) -> Unit,
+    onOpenSubmit: () -> Unit,
+    onDismissSubmit: () -> Unit,
+    onSubmitName: (String) -> Unit,
+    onSubmitArgv: (String) -> Unit,
+    onSubmitCwd: (String) -> Unit,
+    onSubmitTimeout: (String) -> Unit,
+    onSubmitJob: () -> Unit,
 ) {
+    var showSubmit by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -60,6 +76,8 @@ fun DashboardScreen(
             Text("TRMX", fontSize = 32.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.width(10.dp))
             Text("● connected", color = Color(0xFF4CAF50))
+            Spacer(Modifier.weight(1f))
+            Button(onClick = { onOpenSubmit(); showSubmit = true }) { Text("+ New job") }
         }
 
         state.notice?.let { Banner(it) }
@@ -76,7 +94,7 @@ fun DashboardScreen(
             }
         }
 
-        JobsCard(state.jobs)
+        JobsCard(state.jobs, onJobClick)
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onRefresh, enabled = !state.refreshing) {
@@ -86,9 +104,24 @@ fun DashboardScreen(
             OutlinedButton(onClick = onStopBridge) { Text("Stop bridge") }
         }
         Text(
-            "Job submission, live output streaming and file management arrive in the " +
-                "next phases — this screen proves the full control + data plane loop.",
+            "Live output streaming arrives in Phase 6 — this screen covers " +
+                "submit, list and cancel over the data plane.",
             style = MaterialTheme.typography.bodySmall)
+    }
+
+    if (showSubmit) {
+        SubmitDialog(
+            state = submitForm,
+            onName = onSubmitName,
+            onArgv = onSubmitArgv,
+            onCwd = onSubmitCwd,
+            onTimeout = onSubmitTimeout,
+            onSubmit = onSubmitJob,
+            onDismiss = {
+                showSubmit = false
+                onDismissSubmit()
+            },
+        )
     }
 }
 
@@ -137,15 +170,20 @@ private fun KeyValue(k: String, v: String) {
 }
 
 @Composable
-private fun JobsCard(jobs: List<JobSummary>) {
+private fun JobsCard(jobs: List<JobSummary>, onJobClick: (String) -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Jobs (${jobs.size})", fontWeight = FontWeight.Bold)
+            Text("Jobs (${jobs.size}) — tap for details", fontWeight = FontWeight.Bold)
             if (jobs.isEmpty()) {
-                Text("No jobs yet — the bridge is fresh.", style = MaterialTheme.typography.bodyMedium)
+                Text("No jobs yet — submit one with “+ New job”.",
+                     style = MaterialTheme.typography.bodyMedium)
             }
             jobs.take(20).forEach { job ->
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onJobClick(job.job_id) }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(job.job_id, fontFamily = FontFamily.Monospace,
                              modifier = Modifier.width(80.dp))

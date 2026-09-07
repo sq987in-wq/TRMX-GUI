@@ -98,6 +98,96 @@ class BridgeClientTest {
         assertTrue(r is BridgeResult.NetworkError)
     }
 
+    // ---- Phase 5: submit / get / cancel ---------------------------------
+
+    @Test
+    fun `submit sends the contract body and parses the 201 response`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(201)
+                .setBody(SUBMIT_RESPONSE_FIXTURE)
+                .setHeader("Content-Type", "application/json"))
+        val request = BridgeClient.jsonFormat.decodeFromString(
+            dev.trmx.gui.model.SubmitRequest.serializer(), SUBMIT_REQUEST_FIXTURE)
+        val r = client.submitJob(request)
+        assertTrue("expected success, got $r", r is BridgeResult.Success)
+
+        val outcome = (r as BridgeResult.Success).data
+        assertEquals("J-1A2B", outcome.response.job_id)
+        assertEquals("QUEUED", outcome.response.status)
+        assertTrue(!outcome.replayed)
+
+        val req = server.takeRequest(5, TimeUnit.SECONDS)!!
+        assertEquals("POST", req.method)
+        assertEquals("/v1/jobs", req.path)
+        assertEquals("Bearer test-token-0123456789abcdefghijklmnop",
+                     req.getHeader("Authorization"))
+        assertEquals("1", req.getHeader("X-TRMX-Protocol"))
+        // body must equal the normative request fixture (JSON-equal)
+        val sent = BridgeClient.jsonFormat.parseToJsonElement(req.body.readUtf8())
+        val expected = BridgeClient.jsonFormat.parseToJsonElement(SUBMIT_REQUEST_FIXTURE)
+        assertEquals(expected, sent)
+    }
+
+    @Test
+    fun `submit honors the Idempotent-Replay header`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(201)
+                .setBody(SUBMIT_RESPONSE_FIXTURE)
+                .setHeader("Content-Type", "application/json")
+                .setHeader("Idempotent-Replay", "true"))
+        val request = BridgeClient.jsonFormat.decodeFromString(
+            dev.trmx.gui.model.SubmitRequest.serializer(), SUBMIT_REQUEST_FIXTURE)
+        val r = client.submitJob(request)
+        assertTrue(r is BridgeResult.Success)
+        assertTrue((r as BridgeResult.Success).data.replayed)
+    }
+
+    @Test
+    fun `validation error from the bridge surfaces code and field context`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(400)
+                .setBody(ERROR_FIXTURE)
+                .setHeader("Content-Type", "application/json"))
+        val request = BridgeClient.jsonFormat.decodeFromString(
+            dev.trmx.gui.model.SubmitRequest.serializer(), SUBMIT_REQUEST_FIXTURE)
+        val r = client.submitJob(request)
+        assertTrue(r is BridgeResult.HttpError)
+        val err = r as BridgeResult.HttpError
+        assertEquals(400, err.status)
+        assertEquals("ARG_INVALID", err.code)
+    }
+
+    @Test
+    fun `getJob fetches one job by id`() = runTest {
+        server.enqueue(MockResponse().setBody(JOB_GET_FIXTURE).setHeader("Content-Type", "application/json"))
+        val r = client.getJob("J-1A2B")
+        assertTrue(r is BridgeResult.Success)
+        val job = (r as BridgeResult.Success).data
+        assertEquals("J-1A2B", job.job_id)
+        assertEquals("COMPLETED", job.status)
+        assertEquals(12842L, job.pid)
+        assertEquals(7, job.argv!!.size)
+        assertEquals("/v1/jobs/J-1A2B", server.takeRequest(5, TimeUnit.SECONDS)!!.path)
+    }
+
+    @Test
+    fun `cancel posts grace and force, parses the cancelling job`() = runTest {
+        server.enqueue(MockResponse().setBody(CANCEL_RESPONSE_FIXTURE).setHeader("Content-Type", "application/json"))
+        val r = client.cancelJob("J-1A2C", graceMs = 5000L, force = false)
+        assertTrue(r is BridgeResult.Success)
+        val job = (r as BridgeResult.Success).data
+        assertEquals("CANCELLING", job.status)
+        assertTrue(job.cancel_requested)
+        assertEquals("user", job.cancel_reason)
+
+        val req = server.takeRequest(5, TimeUnit.SECONDS)!!
+        assertEquals("POST", req.method)
+        assertEquals("/v1/jobs/J-1A2C/cancel", req.path)
+        val sent = BridgeClient.jsonFormat.parseToJsonElement(req.body.readUtf8())
+        val expected = BridgeClient.jsonFormat.parseToJsonElement(CANCEL_REQUEST_FIXTURE)
+        assertEquals(expected, sent)
+    }
+
     companion object {
         // byte-identical to fixtures/v1/system.info.response.json
         private val SYSTEM_INFO_FIXTURE = """
@@ -191,6 +281,100 @@ class BridgeClientTest {
     "field": "args.format",
     "details": { "allowed": ["mp4", "mkv", "best"] }
   }
+}
+"""
+
+        // byte-identical to fixtures/v1/jobs.submit.request.argv.json
+        private val SUBMIT_REQUEST_FIXTURE = """
+{
+  "name": "Re-encode lecture video",
+  "type": "argv",
+  "argv": ["ffmpeg", "-i", "~/downloads/lecture.mkv", "-c:v", "libx264", "-preset", "fast", "~/downloads/lecture.mp4"],
+  "cwd": "~",
+  "env": null,
+  "timeout_s": 7200,
+  "idempotency_key": "8f14e45f-6ea5-4bdc-b0b7-9b2f1c7d3e9a"
+}
+"""
+
+        // byte-identical to fixtures/v1/jobs.submit.response.json
+        private val SUBMIT_RESPONSE_FIXTURE = """
+{
+  "job_id": "J-1A2B",
+  "status": "QUEUED"
+}
+"""
+
+        // byte-identical to fixtures/v1/jobs.cancel.request.json
+        private val CANCEL_REQUEST_FIXTURE = """
+{
+  "grace_ms": 5000,
+  "force": false
+}
+"""
+
+        // byte-identical to fixtures/v1/jobs.cancel.response.json
+        private val CANCEL_RESPONSE_FIXTURE = """
+{
+  "job_id": "J-1A2C",
+  "name": "Nightly backup",
+  "type": "argv",
+  "argv": ["tar", "czf", "~/backups/home-2026-09-07.tgz", "~/projects"],
+  "script": null,
+  "cwd": "~",
+  "env": null,
+  "status": "CANCELLING",
+  "created_at": "2026-09-07T13:46:00.101Z",
+  "started_at": "2026-09-07T13:46:00.512Z",
+  "ended_at": null,
+  "pid": 12901,
+  "pgid": 12901,
+  "exit_code": null,
+  "signal": null,
+  "cancel_requested": true,
+  "cancel_reason": "user",
+  "error": null,
+  "timeout_s": null,
+  "progress_pct": null,
+  "progress_detail": null,
+  "stdout_bytes": 0,
+  "stderr_bytes": 132,
+  "log_seq": 12,
+  "log_truncated": false,
+  "idempotency_key": null
+}
+"""
+
+        // byte-identical to fixtures/v1/jobs.get.response.json
+        private val JOB_GET_FIXTURE = """
+{
+  "job_id": "J-1A2B",
+  "name": "Download: Cats documentary",
+  "type": "tool",
+  "tool": "yt-dlp",
+  "argv": ["yt-dlp", "--newline", "-f", "mp4", "-P", "~/downloads", "https://example.com/watch?v=xyz"],
+  "script": null,
+  "cwd": "~/downloads",
+  "env": null,
+  "status": "COMPLETED",
+  "created_at": "2026-09-07T13:40:11.002Z",
+  "started_at": "2026-09-07T13:40:11.480Z",
+  "ended_at": "2026-09-07T13:47:02.481Z",
+  "pid": 12842,
+  "pgid": 12842,
+  "exit_code": 0,
+  "signal": null,
+  "cancel_requested": false,
+  "cancel_reason": null,
+  "error": null,
+  "timeout_s": 7200,
+  "progress_pct": 100.0,
+  "progress_detail": "[download] 100% of 123.45MiB in 06:51",
+  "stdout_bytes": 20481,
+  "stderr_bytes": 0,
+  "log_seq": 4823,
+  "log_truncated": false,
+  "idempotency_key": "8f14e45f-6ea5-4bdc-b0b7-9b2f1c7d3e9a"
 }
 """
     }

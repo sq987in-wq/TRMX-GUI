@@ -61,6 +61,39 @@ data class Features(
 @Serializable
 data class JobError(val code: String = "", val message: String = "")
 
+/** POST /v1/jobs request body (TRMX-P/1 §3.2; type "argv" only in V1). */
+@Serializable
+data class SubmitRequest(
+    val name: String,
+    val type: String,          // always "argv" in V1 — no default so it is always encoded
+    val argv: List<String>,
+    val cwd: String? = null,   // nulls are encoded explicitly, matching the fixture shape
+    val env: Map<String, String>? = null,
+    val timeout_s: Long? = null,
+    val idempotency_key: String? = null,
+)
+
+/** POST /v1/jobs/{id}/cancel request body. */
+@Serializable
+data class CancelRequest(
+    val grace_ms: Long?,
+    val force: Boolean,
+)
+
+/** POST /v1/jobs response: {"job_id":…, "status":…} + Idempotent-Replay header. */
+@Serializable
+data class SubmitResponse(
+    val job_id: String = "",
+    val status: String = "",
+)
+
+/** Submit + whether it was an idempotent replay (Idempotent-Replay header). */
+data class SubmitOutcome(
+    val response: SubmitResponse,
+    val replayed: Boolean,
+)
+
+
 @Serializable
 data class JobSummary(
     val job_id: String,

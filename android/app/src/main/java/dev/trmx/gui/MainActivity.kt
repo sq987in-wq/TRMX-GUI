@@ -10,6 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.trmx.gui.ui.DashboardScreen
+import dev.trmx.gui.ui.JobDetailScreen
 import dev.trmx.gui.ui.TRMXTheme
 import dev.trmx.gui.ui.WizardScreen
 import dev.trmx.gui.wizard.WizardStep
@@ -29,18 +30,12 @@ class MainActivity : ComponentActivity() {
 fun AppRoot(vm: AppViewModel = viewModel()) {
     val wizard by vm.wizard.collectAsStateWithLifecycle()
     val dashboard by vm.dashboard.collectAsStateWithLifecycle()
+    val submitForm by vm.submitForm.collectAsStateWithLifecycle()
+    val detail by vm.detail.collectAsStateWithLifecycle()
     val termuxInstalled = remember { vm.isTermuxInstalled() }
 
-    if (wizard.step == WizardStep.DONE) {
-        LaunchedEffect(Unit) { if (dashboard.info == null) vm.refresh() }
-        DashboardScreen(
-            state = dashboard,
-            onRefresh = vm::refresh,
-            onStopBridge = vm::stopBridge,
-            onRerunWizard = vm::resetWizard,
-        )
-    } else {
-        WizardScreen(
+    when {
+        wizard.step != WizardStep.DONE -> WizardScreen(
             state = wizard,
             termuxInstalled = termuxInstalled,
             onConsentTermux = vm::consentTermux,
@@ -52,5 +47,34 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
             onRetry = vm::retry,
             onReset = vm::resetWizard,
         )
+
+        else -> {
+            // local capture: `detail` is a delegated property and cannot be smart-cast
+            val detailState = detail
+            if (detailState != null) {
+                JobDetailScreen(
+                    state = detailState,
+                    onBack = { vm.selectJob(null) },
+                    onCancelJob = vm::cancelJob,
+                )
+            } else {
+                LaunchedEffect(Unit) { if (dashboard.info == null) vm.refresh() }
+                DashboardScreen(
+                    state = dashboard,
+                    submitForm = submitForm,
+                    onRefresh = vm::refresh,
+                    onStopBridge = vm::stopBridge,
+                    onRerunWizard = vm::resetWizard,
+                    onJobClick = vm::selectJob,
+                    onOpenSubmit = vm::clearSubmitErrors,
+                    onDismissSubmit = vm::clearSubmitErrors,
+                    onSubmitName = vm::editName,
+                    onSubmitArgv = vm::editArgvText,
+                    onSubmitCwd = vm::editCwd,
+                    onSubmitTimeout = vm::editTimeout,
+                    onSubmitJob = vm::submitJob,
+                )
+            }
+        }
     }
 }

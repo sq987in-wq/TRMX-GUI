@@ -11,14 +11,23 @@ package dev.trmx.gui.net
  * OkHttp never sends an Origin header (that would be 403 ORIGIN_DENIED).
  */
 
+import dev.trmx.gui.model.CancelRequest
 import dev.trmx.gui.model.ErrorEnvelope
+import dev.trmx.gui.model.JobSummary
 import dev.trmx.gui.model.JobsPage
+import dev.trmx.gui.model.SubmitOutcome
+import dev.trmx.gui.model.SubmitRequest
+import dev.trmx.gui.model.SubmitResponse
 import dev.trmx.gui.model.SystemInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import okhttp3.Headers
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 
 sealed interface BridgeResult<out T> {
@@ -34,36 +43,68 @@ class BridgeClient(
 ) {
 
     suspend fun systemInfo(): BridgeResult<SystemInfo> =
-        get("/v1/system/info") { json -> jsonFormat.decodeFromString(SystemInfo.serializer(), json) }
+        get("/v1/system/info") { body, _ -> jsonFormat.decodeFromString(SystemInfo.serializer(), body) }
 
-    suspend fun listJobs(limit: Int = 50): BridgeResult<JobsPage> =
-        get("/v1/jobs?limit=$limit") { json -> jsonFormat.decodeFromString(JobsPage.serializer(), json) }
+    suspend fun listJobs(
+        limit: Int = 50,
+        status: String? = null,
+        before: String? = null,
+    ): BridgeResult<JobsPage> {
+        var path = "/v1/jobs?limit=$limit"
+        status?.let { path += "&status=$it" }
+        before?.let { path += "&before=$it" }
+        return get(path) { body, _ -> jsonFormat.decodeFromString(JobsPage.serializer(), body) }
+    }
+
+    suspend fun getJob(jobId: String): BridgeResult<JobSummary> =
+        get("/v1/jobs/$jobId") { body, _ -> jsonFormat.decodeFromString(JobSummary.serializer(), body) }
+
+    suspend fun submitJob(request: SubmitRequest): BridgeResult<SubmitOutcome> =
+        call("POST", "/v1/jobs",
+             jsonFormat.encodeToString(SubmitRequest.serializer(), request).toRequestBody(JSON)) { body, headers ->
+            val resp = jsonFormat.decodeFromString(SubmitResponse.serializer(), body)
+            SubmitOutcome(resp, "true".equals(headers["Idempotent-Replay"], ignoreCase = true))
+        }
+
+    suspend fun cancelJob(jobId: String, graceMs: Long? = null, force: Boolean = false): BridgeResult<JobSummary> =
+        call("POST", "/v1/jobs/$jobId/cancel",
+             jsonFormat.encodeToString(CancelRequest.serializer(), CancelRequest(graceMs, force))
+                 .toRequestBody(JSON)) { body, _ ->
+            jsonFormat.decodeFromString(JobSummary.serializer(), body)
+        }
 
     // ---- internals -----------------------------------------------------
 
     private suspend fun <T> get(
         path: String,
-        parse: (String) -> T,
+        parse: (body: String, headers: Headers) -> T,
+    ): BridgeResult<T> = call("GET", path, null, parse)
+
+    private suspend fun <T> call(
+        method: String,
+        path: String,
+        body: RequestBody?,
+        parse: (body: String, headers: Headers) -> T,
     ): BridgeResult<T> = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url(baseUrl + path)
             .header("Authorization", "Bearer $token")
             .header(PROTOCOL_HEADER, PROTOCOL_VERSION)
-            .get()
+            .method(method, body)
             .build()
         try {
             client.newCall(request).execute().use { resp ->
-                val body = resp.body?.string() ?: ""
+                val bodyText = resp.body?.string() ?: ""
                 if (resp.isSuccessful) {
-                    BridgeResult.Success(parse(body))
+                    BridgeResult.Success(parse(bodyText, resp.headers))
                 } else {
                     val err = runCatching {
-                        jsonFormat.decodeFromString(ErrorEnvelope.serializer(), body).error
+                        jsonFormat.decodeFromString(ErrorEnvelope.serializer(), bodyText).error
                     }.getOrNull()
                     BridgeResult.HttpError(
                         resp.code,
                         err?.code ?: "HTTP_${resp.code}",
-                        err?.message ?: body.take(200))
+                        err?.message ?: bodyText.take(200))
                 }
             }
         } catch (e: IOException) {
@@ -76,10 +117,12 @@ class BridgeClient(
     companion object {
         const val PROTOCOL_HEADER = "X-TRMX-Protocol"
         const val PROTOCOL_VERSION = "1"
+        private val JSON = "application/json; charset=utf-8".toMediaType()
 
         val jsonFormat: Json = Json {
             ignoreUnknownKeys = true
             isLenient = false
+            encodeDefaults = true   // wire shape: optional fields are sent explicitly (env: null, …)
         }
     }
 }

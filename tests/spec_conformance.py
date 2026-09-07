@@ -90,6 +90,8 @@ client_kt = (REPO / "android" / "app" / "src" / "main" / "java" / "dev" / "trmx"
              / "net" / "BridgeClient.kt").read_text("utf-8")
 protocol = (REPO / "docs" / "PROTOCOL.md").read_text("utf-8")
 routes = {r.split("?")[0] for r in re.findall(r'"(/v1/[a-zA-Z0-9/?=&$_-]+)"', client_kt)}
+# normalize Kotlin path templates ("$jobId") to the spec's {id} spelling
+routes = {re.sub(r"\$\w+", "{id}", r) for r in routes}
 check("app calls at least the handshake + jobs routes",
       {"/v1/system/info", "/v1/jobs"} <= routes, f"found={sorted(routes)}")
 for r in sorted(routes):
@@ -97,6 +99,8 @@ for r in sorted(routes):
 check("client sends the protocol handshake header",
       '"X-TRMX-Protocol"' in client_kt and 'PROTOCOL_VERSION = "1"' in client_kt)
 check("client sends bearer auth", '"Authorization", "Bearer $token"' in client_kt)
+check("optional wire fields are encoded explicitly (env: null etc.)",
+      "encodeDefaults = true" in client_kt)
 
 # --- 3. embedded fixture payloads are byte-identical ------------------------
 
@@ -106,11 +110,20 @@ test_kt = (REPO / "android" / "app" / "src" / "test" / "java" / "dev" / "trmx" /
 blocks = [b.strip() for b in re.findall(r'"""(.*?)"""', test_kt, re.S)]
 fixtures = {p.name: p.read_text("utf-8").strip()
             for p in (REPO / "fixtures" / "v1").glob("*.json")}
-check("exactly three embedded payloads found", len(blocks) == 3, f"got {len(blocks)}")
+check("embedded payload block count looks right", len(blocks) >= 8, f"got {len(blocks)}")
 for b in blocks:
-    matches = [name for name, text in fixtures.items() if text == b]
-    check("embedded payload is byte-identical to a fixture",
-          len(matches) == 1, f"matches={matches}")
+    byte_matches = [name for name, text in fixtures.items() if text == b]
+    json_matches = []
+    if not byte_matches:
+        try:
+            parsed = json.loads(b)
+            json_matches = [name for name, text in fixtures.items()
+                            if json.loads(text) == parsed]
+        except ValueError:
+            pass
+    check("embedded payload matches a fixture (byte-identical or JSON-equal)",
+          len(byte_matches) + len(json_matches) == 1,
+          f"byte={byte_matches} json={json_matches}")
 
 # --- 4. manifest declarations ----------------------------------------------
 

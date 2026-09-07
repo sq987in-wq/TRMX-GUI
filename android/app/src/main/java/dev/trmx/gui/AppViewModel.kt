@@ -3,7 +3,8 @@ package dev.trmx.gui
 /*
  * AppViewModel — orchestrates the control plane (intents) and the data
  * plane (BridgeClient) and exposes UI state. Kept deliberately thin: all
- * decision logic lives in WizardEngine (pure) and Handshaker (pure).
+ * decision logic lives in WizardEngine (pure), Handshaker (pure) and
+ * SubmitValidator (pure).
  */
 
 import android.app.Application
@@ -12,7 +13,9 @@ import androidx.lifecycle.viewModelScope
 import dev.trmx.gui.control.ControlOps
 import dev.trmx.gui.control.ControlPlaneException
 import dev.trmx.gui.control.IntentControlPlane
+import dev.trmx.gui.job.SubmitValidator
 import dev.trmx.gui.model.JobSummary
+import dev.trmx.gui.model.SubmitRequest
 import dev.trmx.gui.model.SystemInfo
 import dev.trmx.gui.net.BridgeClient
 import dev.trmx.gui.net.BridgeResult
@@ -28,9 +31,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
+import java.util.UUID
 
 data class DashboardState(
     val info: SystemInfo? = null,
@@ -38,6 +43,22 @@ data class DashboardState(
     val refreshing: Boolean = false,
     val error: String? = null,
     val notice: String? = null,
+)
+
+data class SubmitFormState(
+    val name: String = "",
+    val argvText: String = "",
+    val cwd: String = "",
+    val timeoutText: String = "",
+    val submitting: Boolean = false,
+    val errors: List<SubmitValidator.FieldError> = emptyList(),
+)
+
+data class JobDetailState(
+    val jobId: String,
+    val job: JobSummary? = null,
+    val error: String? = null,
+    val cancelling: Boolean = false,
 )
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
@@ -53,17 +74,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _dashboard = MutableStateFlow(DashboardState())
     val dashboard = _dashboard.asStateFlow()
 
-    /** True when a previous successful wizard run is stored. */
-    val everPaired: Boolean get() = store.isPaired
+    private val _submitForm = MutableStateFlow(SubmitFormState())
+    val submitForm = _submitForm.asStateFlow()
+
+    private val _detail = MutableStateFlow<JobDetailState?>(null)
+    val detail = _detail.asStateFlow()
 
     fun isTermuxInstalled(): Boolean = controlPlane.isTermuxInstalled()
 
     private var sequenceJob: Job? = null
+    private var pollJob: Job? = null
     private val skipSignal = Channel<Unit>(Channel.CONFLATED)
 
     init {
         if (store.isPaired) warmStart()
     }
+
+    private fun client() = BridgeClient(store.bridgeBaseUrl, store.token, http)
 
     // ---- wizard ---------------------------------------------------------
 
@@ -206,12 +233,111 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun applyEvent(e: WizardEvent) = _wizard.update { wizardEngine.reduce(it, e) }
 
+    // ---- submit form ----------------------------------------------------
+
+    fun editName(v: String) = _submitForm.update { it.copy(name = v) }
+    fun editArgvText(v: String) = _submitForm.update { it.copy(argvText = v) }
+    fun editCwd(v: String) = _submitForm.update { it.copy(cwd = v) }
+    fun editTimeout(v: String) = _submitForm.update { it.copy(timeoutText = v) }
+
+    fun clearSubmitErrors() = _submitForm.update { it.copy(errors = emptyList()) }
+
+    fun submitJob() {
+        val form = _submitForm.value
+        val argv = SubmitValidator.parseArgvText(form.argvText)
+        val timeout = form.timeoutText.trim().toLongOrNull()
+        if (timeout == null && form.timeoutText.isNotBlank()) {
+            _submitForm.update {
+                it.copy(errors = listOf(SubmitValidator.FieldError("timeout_s", "Timeout must be a number of seconds (or empty).")))
+            }
+            return
+        }
+        val errors = SubmitValidator.validate(form.name.trim(), argv, timeout, form.cwd.trim())
+        if (errors.isNotEmpty()) {
+            _submitForm.update { it.copy(errors = errors) }
+            return
+        }
+        _submitForm.update { it.copy(submitting = true, errors = emptyList()) }
+        viewModelScope.launch {
+            val request = SubmitRequest(
+                name = form.name.trim().ifEmpty { argv.firstOrNull()?.substringAfterLast('/') ?: "job" },
+                type = "argv",
+                argv = argv,
+                cwd = form.cwd.trim().ifEmpty { null },
+                env = null,
+                timeout_s = timeout,
+                idempotency_key = UUID.randomUUID().toString(),
+            )
+            when (val r = client().submitJob(request)) {
+                is BridgeResult.Success -> {
+                    _submitForm.value = SubmitFormState()
+                    _dashboard.update {
+                        it.copy(notice = "job ${r.data.response.job_id} submitted" +
+                            if (r.data.replayed) " (idempotent replay)" else "")
+                    }
+                    refresh()
+                }
+                is BridgeResult.HttpError -> _submitForm.update {
+                    it.copy(submitting = false,
+                            errors = listOf(SubmitValidator.FieldError(r.code, r.message)))
+                }
+                is BridgeResult.NetworkError -> _submitForm.update {
+                    it.copy(submitting = false,
+                            errors = listOf(SubmitValidator.FieldError(
+                                "network", "bridge unreachable: ${r.cause.message}")))
+                }
+            }
+        }
+    }
+
+    // ---- job detail + cancel --------------------------------------------
+
+    fun selectJob(jobId: String?) {
+        pollJob?.cancel()
+        if (jobId == null) {
+            _detail.value = null
+        } else {
+            _detail.value = JobDetailState(jobId)
+            pollJob = viewModelScope.launch {
+                while (isActive) {
+                    when (val r = client().getJob(jobId)) {
+                        is BridgeResult.Success -> {
+                            _detail.update { it.copy(job = r.data, error = null) }
+                            if (r.data.status in TERMINAL) break
+                        }
+                        is BridgeResult.HttpError -> {
+                            _detail.update { it.copy(error = "HTTP ${r.status}: ${r.code}") }
+                            break
+                        }
+                        is BridgeResult.NetworkError -> {
+                            _detail.update { it.copy(error = "bridge unreachable: ${r.cause.message}") }
+                        }
+                    }
+                    delay(DETAIL_POLL_MS)
+                }
+            }
+        }
+    }
+
+    fun cancelJob(jobId: String) {
+        _detail.update { it.copy(cancelling = true) }
+        viewModelScope.launch {
+            when (val r = client().cancelJob(jobId)) {
+                is BridgeResult.Success -> _detail.update { it.copy(job = r.data, cancelling = false) }
+                is BridgeResult.HttpError ->
+                    _detail.update { it.copy(cancelling = false, error = "HTTP ${r.status}: ${r.code} — ${r.message}") }
+                is BridgeResult.NetworkError ->
+                    _detail.update { it.copy(cancelling = false, error = "bridge unreachable: ${r.cause.message}") }
+            }
+        }
+    }
+
     // ---- dashboard ------------------------------------------------------
 
     fun refresh() {
         _dashboard.update { it.copy(refreshing = true, error = null) }
         viewModelScope.launch {
-            val client = BridgeClient(store.bridgeBaseUrl, store.token, http)
+            val client = client()
             when (val info = client.systemInfo()) {
                 is BridgeResult.Success -> _dashboard.update { it.copy(info = info.data) }
                 is BridgeResult.HttpError -> {
@@ -243,8 +369,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun probe(): BridgeResult<SystemInfo> =
-        BridgeClient(store.bridgeBaseUrl, store.token, http).systemInfo()
+    private suspend fun probe(): BridgeResult<SystemInfo> = client().systemInfo()
 
     private fun handshaker() =
         Handshaker(probe = { probe() }, pollIntervalMs = 500, maxAttempts = 60)
@@ -253,5 +378,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private const val INSTALL_PY_WAIT_MS = 40_000L
         private const val INSTALL_WAIT_MS = 20_000L
         private const val PAIR_WAIT_MS = 3_000L
+        private const val DETAIL_POLL_MS = 2_000L
+        private val TERMINAL = setOf("COMPLETED", "FAILED", "CANCELLED", "LOST")
     }
 }
