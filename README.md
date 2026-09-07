@@ -14,7 +14,8 @@ TRMX-GUI does not replace Termux — it drives it: run and monitor jobs, stream 
 | **Phase 0 — Feasibility & Architecture Discovery** | ✅ **Complete & approved** (decisions in Appendix 3) |
 | **Phase 1 — Protocol freeze & project constitution** | ✅ **Complete** (TRMX-P/1, ADR-001…003) |
 | **Phase 2 — Termux bridge PoC** | ✅ **Code complete — 19/19 tests + smoke demo pass (sandbox); on-device verification in Termux pending** |
-| Phases 3–12 | 🚫 not started (Phase 3 = bootstrap automation via RUN_COMMAND intents) |
+| **Phase 3 — Bootstrap automation** | ✅ **Complete — installer + autostart + frozen intent contract; 12/12 bootstrap tests, 31/31 total (sandbox)** |
+| Phases 4–12 | 🚫 not started (Phase 4 = native Android app shell + connection wizard) |
 
 **Phase 0 decisions:** me + friends distribution via GitHub releases · Termux from GitHub Releases · target Android 14+ (minSdk 26) · hybrid GUI (Tool Registry + universal runner) · device-local-only V1 transport · core-first V1 scope. See [Appendix 3 of the report](docs/PHASE-0-DISCOVERY-REPORT.md#appendix-3--phase-0-sign-off-inputs-recorded-2026-09-07).
 
@@ -22,8 +23,9 @@ TRMX-GUI does not replace Termux — it drives it: run and monitor jobs, stream 
 
 - [docs/PHASE-0-DISCOVERY-REPORT.md](docs/PHASE-0-DISCOVERY-REPORT.md) — feasibility verdict, *maximum practical control boundary*, communication comparison, full system architecture, threat model, feature map, 13-phase roadmap, testing strategy, risks
 - [docs/PROTOCOL.md](docs/PROTOCOL.md) — **TRMX-P/1**: the wire contract between app and bridge (every route, error code, event, limit, versioning rule)
+- [docs/CONTROL-PLANE.md](docs/CONTROL-PLANE.md) — **the frozen `RUN_COMMAND` intent interface**: 8 operations, consent preconditions, first-run/warm-start/upgrade sequences, error-state mapping
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — living architecture summary
-- [docs/decisions/](docs/decisions/) — ADR decision log (ADR-001 architecture, ADR-002 protocol core, ADR-003 license)
+- [docs/decisions/](docs/decisions/) — ADR decision log (ADR-001 architecture, ADR-002 protocol core, ADR-003 license, ADR-004 bridge PoC, ADR-005 bootstrap automation)
 - [fixtures/v1/](fixtures/v1/) — normative contract fixtures shared by both test suites
 - [CHANGELOG.md](CHANGELOG.md) · [LICENSE](LICENSE) (MIT)
 
@@ -37,19 +39,27 @@ TRMX-GUI does not replace Termux — it drives it: run and monitor jobs, stream 
 ## Repository layout
 
 ```
-docs/        discovery report, protocol spec, living architecture, ADRs
+docs/        discovery report, protocol spec, control-plane spec, living architecture, ADRs
 fixtures/    normative TRMX-P/1 contract fixtures (shared by both test suites)
 android/     native Android app (Kotlin + Jetpack Compose)      — Phase 4+
-termux/      trmx-bridge daemon, trmx CLI, tests, smoke demo     — Phase 2 ✅
+termux/      trmx-bridge daemon, trmx CLI, installer, tests     — Phases 2–3 ✅
 ```
 
-## Try the Phase 2 bridge (in Termux or any Linux box)
+## Try it (in Termux or any Linux box)
 
 ```sh
 pkg install python curl          # in Termux; elsewhere just need python3 + curl
 git clone https://github.com/sq987in-wq/TRMX-GUI && cd TRMX-GUI
-sh termux/tests/smoke.sh         # the full Phase 2 demo, throwaway home
-sh termux/tests/run_tests.sh     # the 19-test suite
+
+# Phase 3: install into a throwaway home and run the bridge (TRMX_HOME = the .trmx dir)
+D=/tmp/trmx-demo; mkdir -p $D
+env HOME=$D TRMX_HOME=$D/.trmx sh termux/install.sh --source termux
+env HOME=$D TRMX_HOME=$D/.trmx $D/.trmx/trmx start
+env HOME=$D TRMX_HOME=$D/.trmx $D/.trmx/trmx status    # → data-plane: UP
+env HOME=$D TRMX_HOME=$D/.trmx $D/.trmx/trmx stop
+
+sh termux/tests/smoke.sh         # the full Phase 2 demo (pair → … → re-adopt → stop)
+sh termux/tests/run_tests.sh     # both suites: 19 bridge + 12 bootstrap tests
 ```
 
 ## Contributing / building

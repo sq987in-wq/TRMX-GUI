@@ -6,6 +6,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Added — Phase 3: Bootstrap automation (2026-09-07)
+- **`termux/install.sh`** — one-command installer driven by `RUN_COMMAND`
+  intents: remote (`--base URL`, default GitHub raw) and local (`--source`)
+  modes, staged + SHA256-verified + atomic `mv` install (never a partial
+  file), idempotent re-runs with `.old` backups, auto stop/replace/restart
+  of a **running** bridge, `installed.json` manifest, loud `UNVERIFIED`
+  warning when no sums are available.
+- **`termux/gen_checksums.sh`** — regenerates `SHA256SUMS` (must run whenever
+  the bridge/CLI change).
+- **`docs/CONTROL-PLANE.md`** — the frozen intent interface for the Android
+  app: 8 operations with exact argv, precondition/consent table, first-run /
+  warm-start / upgrade sequences, error-state mapping.
+- **`termux/trmx` v0.3.0** — new commands: `enable-boot` (Termux:Boot
+  autostart script), `enable-service` (runit service; requires
+  `termux-services`), `version`; env overrides (`TRMX_HOME`, `TRMX_PREFIX`,
+  `TRMX_BOOT_DIR`) for testability.
+- **`termux/tests/test_bootstrap.py`** — 12-test bootstrap suite (install
+  verified/refused/idempotent/upgrade-with-restart, remote mode via
+  network-free `file://`, enable-boot/service, intent command reference).
+  **12/12 passing.**
+- **`termux/tests/intent_commands.sh`** — prints the exact `adb` commands for
+  all 8 control-plane ops (on-device proof without the app).
+- **`docs/decisions/ADR-005`** — bootstrap decisions + trust-anchor honesty.
+- `termux/tests/run_tests.sh` now runs both suites (bridge + bootstrap).
+
 ### Added — Phase 2: Termux bridge PoC (2026-09-07)
 - **`termux/trmx-bridge.py` v0.2.0** — the execution-plane daemon (single file, Python 3
   stdlib only, per ADR-002). Implements the TRMX-P/1 subset: system/info & policy,

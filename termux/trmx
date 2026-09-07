@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""trmx — control CLI for the TRMX bridge (Phase 2 subset).
+"""trmx — control CLI for the TRMX bridge (Phase 3).
 
 Runnable even when the bridge is down, so `RUN_COMMAND` intents from the
-Android app can drive it (Phase 0 report §B.5, §B.8):
+Android app can drive it (docs/CONTROL-PLANE.md):
 
   trmx init                 create ~/.trmx (no secrets)
   trmx pair TOKEN [--force] store the app-generated token (0600)
@@ -12,8 +12,14 @@ Android app can drive it (Phase 0 report §B.5, §B.8):
   trmx stop                 stop it (API stop, then SIGTERM fallback)
   trmx status               is the port answering?
   trmx pid                  print the bridge PID from the pidfile
+  trmx enable-boot          install the Termux:Boot autostart script
+  trmx enable-service       install the runit service (needs termux-services)
+  trmx version              print CLI + bridge versions
 
-Phase 3 will add: install/upgrade, enable-boot, enable-service.
+Env overrides (mainly for tests / non-Termux hosts):
+  TRMX_HOME     state dir       (default ~/.trmx)
+  TRMX_PREFIX   Termux $PREFIX  (default /data/data/com.termux/files/usr)
+  TRMX_BOOT_DIR Termux boot dir (default ~/.termux/boot)
 """
 
 from __future__ import annotations
@@ -21,11 +27,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+TRMX_CLI_VERSION = "0.3.0"
 
 HERE = Path(__file__).resolve().parent
 BRIDGE = HERE / "trmx-bridge.py"
@@ -224,6 +233,59 @@ def cmd_pid(args) -> int:
     return 1
 
 
+def termux_prefix() -> Path:
+    return Path(os.environ.get("TRMX_PREFIX", "/data/data/com.termux/files/usr"))
+
+
+def cmd_enable_boot(args) -> int:
+    """Install ~/.termux/boot/trmx-bridge — Termux:Boot runs it after reboot."""
+    boot_dir = Path(os.environ.get("TRMX_BOOT_DIR", str(Path.home() / ".termux" / "boot")))
+    boot_dir.mkdir(parents=True, exist_ok=True)
+    script = boot_dir / "trmx-bridge"
+    prefix = termux_prefix()
+    home = trmx_home()
+    script.write_text(
+        f"#!{prefix}/bin/sh\n"
+        f"# installed by `trmx enable-boot` — starts the TRMX bridge at boot\n"
+        f'export TRMX_HOME="{home}"\n'
+        f'exec "{home}/trmx" start >> "{home}/bridge.log" 2>&1\n')
+    os.chmod(script, 0o755)
+    print(f"boot script installed: {script}")
+    print("note: open the Termux:Boot app once so Android allows it to run at boot")
+    return 0
+
+
+def cmd_enable_service(args) -> int:
+    """Install the runit service (pkg install termux-services required)."""
+    prefix = termux_prefix()
+    svdir = prefix / "var" / "service"
+    if not svdir.is_dir():
+        sys.exit("trmx enable-service: termux-services not found "
+                 f"({svdir} missing) — run `pkg install termux-services` first")
+    svc = svdir / "trmx-bridge"
+    svc.mkdir(parents=True, exist_ok=True)
+    run = svc / "run"
+    run.write_text(
+        f"#!{prefix}/bin/sh\n"
+        f"# trmx-bridge runit service (installed by `trmx enable-service`)\n"
+        f'export TRMX_HOME="{trmx_home()}"\n'
+        f'exec python3 "{trmx_home()}/trmx-bridge.py" 2>&1\n')
+    os.chmod(run, 0o755)
+    print(f"runit service installed: {run}")
+    print("runit will start/restart the bridge automatically (sv up/down trmx-bridge)")
+    return 0
+
+
+def cmd_version(args) -> int:
+    print(f"trmx CLI  {TRMX_CLI_VERSION}")
+    if BRIDGE.exists():
+        m = re.search(r'^VERSION = "([^"]+)"', BRIDGE.read_text("utf-8"), re.M)
+        print(f"bridge    {m.group(1) if m else 'unknown'}")
+    else:
+        print("bridge    not installed (run install.sh)")
+    return 0
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(prog="trmx", description="TRMX bridge control CLI")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -242,6 +304,9 @@ def main() -> None:
     sub.add_parser("stop").set_defaults(fn=cmd_stop)
     sub.add_parser("status").set_defaults(fn=cmd_status)
     sub.add_parser("pid").set_defaults(fn=cmd_pid)
+    sub.add_parser("enable-boot").set_defaults(fn=cmd_enable_boot)
+    sub.add_parser("enable-service").set_defaults(fn=cmd_enable_service)
+    sub.add_parser("version").set_defaults(fn=cmd_version)
     args = ap.parse_args()
     sys.exit(args.fn(args))
 

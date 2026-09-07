@@ -5,7 +5,7 @@
 
 ## One-paragraph summary
 
-A native Android app (Kotlin + Compose) is a **disposable control plane**; a single-file **Python-stdlib daemon inside Termux (`trmx-bridge`)** is the **execution plane and source of truth**. The app talks to the bridge over token-authenticated localhost HTTP (`TRMX-P/1`, see PROTOCOL.md) for jobs, live output streams, files and tools, and uses Termux's opt-in `RUN_COMMAND` intent API as a **control plane** to bootstrap/install/pair/start the backend when it is down. Termux executes everything; the app never reimplements a capability it can drive.
+A native Android app (Kotlin + Compose) is a **disposable control plane**; a single-file **Python-stdlib daemon inside Termux (`trmx-bridge`)** is the **execution plane and source of truth**. The app talks to the bridge over token-authenticated localhost HTTP (`TRMX-P/1`, see PROTOCOL.md) for jobs, live output streams, files and tools, and uses Termux's opt-in `RUN_COMMAND` intent API as a **control plane** to bootstrap/install/pair/start the backend when it is down (frozen intent contract: [CONTROL-PLANE.md](CONTROL-PLANE.md); installer: `termux/install.sh`, see ADR-005). Termux executes everything; the app never reimplements a capability it can drive.
 
 ## Components
 
