@@ -847,6 +847,23 @@ Facts in this report were verified against these primary/secondary sources (chec
 | **Tool Registry** | JSON schemas describing CLI tools; the app renders GUIs from them |
 | **LOST** | Job state: bridge restarted and the job's process group no longer exists without an exit record |
 
+## Appendix 3 — Phase 0 sign-off inputs (recorded 2026-09-07)
+
+The six ★ questions of §L were answered by the stakeholder. Decisions and their architectural consequences:
+
+| # | Question | **Decision** | Architectural consequence |
+|---|---|---|---|
+| 1 | Distribution scope | **Me + friends** (shared APK / GitHub release) | Security rigor stays high (audit log, redaction tests, contract tests all remain V1-mandatory since users are non-architects); Phase 12 CI + signed GitHub releases are **in scope**; onboarding wizard must be foolproof; pick an OSS license (MIT or Apache-2.0) in Phase 1. |
+| 2 | Termux build | **GitHub Releases** | Pairing wizard targets GitHub install links + GitHub builds of Termux:API/Termux:Boot; source-mismatch check still shipped (defends friends who mix sources); wizard guides ABI choice (GitHub APKs are per-architecture). |
+| 3 | Target Android | **Android 14+** | Phantom-killer detector leads with the Developer-Options toggle path (no PC/ADB needed on 14+); minSdk stays **26** so friends' older phones still install, but the primary test matrix is Android 14+; Android 14 foreground-service **type declarations** and `POST_NOTIFICATIONS` runtime prompt are Phase-4 implementation requirements. |
+| 4 | GUI philosophy | **Hybrid (C)** — as recommended | Confirms §G.1: Tool Registry + universal runner + PTY terminal (V2). No change. |
+| 5 | Communication scope | **Device-local only (V1)** | Confirms V1 transport: loopback-only bind, cleartext + token; TLS/pinned-cert stays V2 hardening (pre-work for any future LAN). No change. |
+| 6 | V1 priority | **Core first** — connection + jobs + logs, then modules | Confirms roadmap order (Phases 4–7 core, Phase 9 modules chosen later by actual usage needs). No change. |
+
+**Non-blocking §L questions still open** — the report's defaults apply unless you override them later: multi-device = later (protocol already ready for it) · must-have tool list = collected at Phase 9 kickoff · raw shell in V1 = argv universal runner with confirmation; full shell-script jobs deferred to V1.5 behind explicit confirm · terminal (PTY) = V2 · app-lock = V1.5 · scheduling = V2 · AI tool list = collected at Phase 9 · dashboard style = dark-first, Material You dynamic color.
+
+**Phase 0 status: input complete — awaiting explicit architecture approval. Phase 1 (protocol freeze) opens only after that approval.**
+
 ---
 
 *End of Phase 0 report. Next step: answer §L (or the interactive prompt), then approve or amend — Phase 1 (protocol freeze) begins only after your explicit go-ahead.*

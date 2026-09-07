@@ -11,9 +11,11 @@ TRMX-GUI does not replace Termux — it drives it: run and monitor jobs, stream 
 
 | Phase | State |
 |---|---|
-| **Phase 0 — Feasibility & Architecture Discovery** | ✅ **Complete — awaiting stakeholder answers + architecture approval** |
+| **Phase 0 — Feasibility & Architecture Discovery** | ✅ **Complete — decisions recorded (Appendix 3); awaiting final architecture approval** |
 | Phase 1 — Protocol freeze | ⏳ blocked on Phase 0 sign-off |
 | Phases 2–12 — Implementation | 🚫 not started (by design: no implementation code before architecture approval) |
+
+**Phase 0 decisions:** me + friends distribution via GitHub releases · Termux from GitHub Releases · target Android 14+ (minSdk 26) · hybrid GUI (Tool Registry + universal runner) · device-local-only V1 transport · core-first V1 scope. See [Appendix 3 of the report](docs/PHASE-0-DISCOVERY-REPORT.md#appendix-3--phase-0-sign-off-inputs-recorded-2026-09-07).
 
 ## Read this first
 
