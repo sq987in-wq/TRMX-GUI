@@ -1,4 +1,4 @@
-# On-Device Test Guide — Phases 4–5
+# On-Device Test Guide — Phases 4–7
 
 > **STATUS: VERIFIED ✅ — 2026-09-08, physical device, Android 16.**
 > Wizard → pair → start → handshake → jobs J-1…J-3 (exit 0). Kept as the
