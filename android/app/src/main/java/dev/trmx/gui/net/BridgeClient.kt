@@ -165,7 +165,7 @@ class BridgeClient(
     private suspend fun <T> get(
         path: String,
         parse: (body: String, headers: Headers) -> T,
-    ): BridgeResult<T> = call("GET", path, null, parse)
+    ): BridgeResult<T> = call("GET", path, null, parse = parse)
 
     private suspend fun <T> call(
         method: String,
