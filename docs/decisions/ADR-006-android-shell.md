@@ -54,6 +54,12 @@ compiler gate for the app.
    disambiguates "intent never ran" from "stale token":
    `token_generated` in `~/.trmx/bridge.json` (true = bridge-generated,
    false = app-paired).
+**Outcome (2026-09-08):** verified end-to-end on a physical Android 16
+device — wizard, pairing, bridge start, handshake, three jobs executed
+(exit 0). The three on-device fix rounds above are the cost of the
+no-local-toolchain strategy made visible; the CI + conformance + honest
+layering kept every fix small and attributable.
+
 5. *Reading CI logs from the restricted sandbox.* The log zip lives on
    a blocked host, but `gh api repos/…/actions/jobs/{id}/logs` mints a
    signed plain-text URL (visible in its EOF error output) that the

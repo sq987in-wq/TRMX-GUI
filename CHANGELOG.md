@@ -6,6 +6,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Verified — on-device end-to-end (Android 16, 2026-09-08)
+Phases 4–5 closed with real hardware: wizard → install → pair → start →
+handshake → three jobs (J-1…J-3) completed with exit code 0, bridge fully
+connected. Three fix rounds were needed and are recorded in ADR-006:
+loopback cleartext policy, missing INTERNET permission, and the
+STOP-before-PAIR pairing flow (plus stable CI debug signing).
+
+
 ### Fixed — third on-device round (2026-09-08): pairing flow robustness
 - **STOP before PAIR in the wizard sequence** (idempotent): a bridge left
   running — e.g. started manually in Termux — holds its old token in memory

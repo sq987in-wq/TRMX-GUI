@@ -1,4 +1,9 @@
-# On-Device Test Guide — Phases 4–5 (first real-world run)
+# On-Device Test Guide — Phases 4–5
+
+> **STATUS: VERIFIED ✅ — 2026-09-08, physical device, Android 16.**
+> Wizard → pair → start → handshake → jobs J-1…J-3 (exit 0). Kept as the
+> regression checklist for future rounds; the troubleshooting notes below
+> are the distilled lessons from the three fix rounds.
 
 **Applies to:** the debug APK built by CI (Actions → latest green `android` run →
 Artifacts → `trmx-debug-apk`). Phone requirements: Android 8+ (user targets 14).

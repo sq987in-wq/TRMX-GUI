@@ -15,8 +15,8 @@ TRMX-GUI does not replace Termux — it drives it: run and monitor jobs, stream 
 | **Phase 1 — Protocol freeze & project constitution** | ✅ **Complete** (TRMX-P/1, ADR-001…003) |
 | **Phase 2 — Termux bridge PoC** | ✅ **Code complete — 19/19 tests + smoke demo pass (sandbox); on-device verification in Termux pending** |
 | **Phase 3 — Bootstrap automation** | ✅ **Complete — installer + autostart + frozen intent contract; 32/32 tests (sandbox)** |
-| **Phase 4 — Android app shell** | ✅ **Compiled + unit tests green in CI (debug APK artifact); on-device e2e pending** |
-| **Phase 5 — Job submission & management** | ✅ **Complete — submit / detail / cancel over the data plane; CI green (build + unit tests + APK)** |
+| **Phase 4 — Android app shell** | ✅ **Complete & on-device verified (Android 16) — 3 fix rounds: cleartext loopback, INTERNET permission, pairing flow** |
+| **Phase 5 — Job submission & management** | ✅ **Complete & ON-DEVICE VERIFIED (Android 16, 2026-09-08): wizard → pair → jobs J-1…J-3 exit 0** |
 | Phases 6–12 | 🚫 not started (Phase 6 = live output streaming, SSE) |
 
 **Phase 0 decisions:** me + friends distribution via GitHub releases · Termux from GitHub Releases · target Android 14+ (minSdk 26) · hybrid GUI (Tool Registry + universal runner) · device-local-only V1 transport · core-first V1 scope. See [Appendix 3 of the report](docs/PHASE-0-DISCOVERY-REPORT.md#appendix-3--phase-0-sign-off-inputs-recorded-2026-09-07).
