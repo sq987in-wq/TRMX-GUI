@@ -134,6 +134,22 @@ check("RUN_COMMAND permission requested",
 check("package visibility for com.termux declared",
       '<package android:name="com.termux" />' in manifest)
 
+# the data plane is cleartext HTTP on loopback — targetSdk>=28 blocks that
+# unless a network security config permits it (on-device round 1 lesson)
+nsc_path = (REPO / "android" / "app" / "src" / "main" / "res" / "xml"
+            / "network_security_config.xml")
+check("network security config present", nsc_path.is_file())
+if nsc_path.is_file():
+    nsc = nsc_path.read_text("utf-8")
+    check("cleartext permitted for loopback",
+          'cleartextTrafficPermitted="true"' in nsc and "127.0.0.1" in nsc)
+    check("cleartext scope is loopback-only (no base-config blanket)",
+          "<base-config" not in nsc and "10.0.2.2" not in nsc)
+    check("manifest references the network security config",
+          'android:networkSecurityConfig="@xml/network_security_config"' in manifest)
+check("no blanket cleartext fallback in manifest",
+      'android:usesCleartextTraffic="true"' not in manifest)
+
 # --- 5. Kotlin comment balance (nested comments!) ---------------------------
 
 print("5. Kotlin block-comment balance (they NEST — see Models.kt history)")

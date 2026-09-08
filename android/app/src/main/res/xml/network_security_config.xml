@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  TRMX data plane is plain HTTP on device loopback (TRMX-P/1; V1 decision:
+  device-local only). Android 9+ (API 28+) blocks cleartext by default when
+  targetSdk >= 28 — without this file, OkHttp fails every request to the
+  bridge client-side ("Cleartext HTTP traffic to 127.0.0.1 not permitted")
+  and the wizard's handshake step times out with a perfectly healthy bridge.
+
+  Scope is deliberately minimal: loopback ONLY. This app may not talk
+  cleartext to any other host. (Found in the first on-device test,
+  2026-09-08; spec_conformance.py checks this file's shape.)
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

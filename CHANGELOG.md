@@ -6,6 +6,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Fixed — first on-device test round (2026-09-08)
+- **Cleartext loopback was blocked (root cause of the wizard handshake
+  timeout).** Android 9+ blocks cleartext HTTP by default for targetSdk>=28;
+  the app had no network security config, so every request to the bridge
+  failed inside OkHttp before any socket was opened — the healthy bridge
+  never saw a single request. Fixed with a **loopback-scoped**
+  `network_security_config.xml` (cleartext permitted for 127.0.0.1/localhost
+  only; no blanket fallback), now pinned by the conformance suite.
+- The wizard's handshake-timeout card now includes the underlying network
+  error ("Last network error: …") — this failure class self-diagnoses from
+  now on.
+
 ### Added — Phase 5: job submission & management (2026-09-07)
 - **Submit** — "+ New job" dialog: name, argv (one line = one argument — no
   shell parsing, no quoting, no injection surface by construction), optional

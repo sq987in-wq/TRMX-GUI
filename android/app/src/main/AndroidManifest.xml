@@ -13,6 +13,7 @@
 
     <application
         android:label="TRMX"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true"
         android:theme="@style/Theme.TRMX">
         <!-- Launcher icon intentionally omitted (system default) — real icon in Phase 8. -->

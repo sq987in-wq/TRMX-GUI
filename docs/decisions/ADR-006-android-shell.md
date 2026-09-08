@@ -39,7 +39,14 @@ compiler gate for the app.
    (`::delay`) cannot be a default parameter value (default-value
    expressions run in a non-suspend context). `Handshaker` now takes a
    nullable delay and resolves it inside the body.
-3. *Reading CI logs from the restricted sandbox.* The log zip lives on
+3. *On-device round 1 (2026-09-08): cleartext loopback.* The data plane is
+   plain HTTP on 127.0.0.1, but targetSdk>=28 blocks cleartext by default —
+   the app needs a loopback-scoped network security config or every request
+   dies inside OkHttp with the bridge perfectly healthy. Fixed with
+   `res/xml/network_security_config.xml` (loopback only, conformance-checked);
+   handshake failure cards now surface the underlying transport error so this
+   class self-diagnoses.
+4. *Reading CI logs from the restricted sandbox.* The log zip lives on
    a blocked host, but `gh api repos/…/actions/jobs/{id}/logs` mints a
    signed plain-text URL (visible in its EOF error output) that the
    platform page fetcher CAN read — the full loop stayed autonomous.

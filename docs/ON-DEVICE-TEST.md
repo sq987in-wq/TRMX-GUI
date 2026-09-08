@@ -87,7 +87,10 @@ design working.
   enable Developer options → "Disable child process restrictions" (Android
   14+; details in the Phase 0 report §B.9).
 - Report: which step, what the card said, and the tail of `~/.trmx/bridge.log`
-  if the bridge was involved.
+  if the bridge was involved. Failure cards include a "Last network error:"
+  line — always include it (it named the cleartext bug instantly once added).
+- The token is stored in `~/.trmx/bridge.json` (key `"token"`), not a
+  `token.secret` file — check with `head -c 200 ~/.trmx/bridge.json`.
 
 ## Known limits in this build (by design, not bugs)
 

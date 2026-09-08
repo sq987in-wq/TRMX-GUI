@@ -192,7 +192,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         "The bridge did not answer. Most likely causes:\n" +
                             "• allow-external-apps is not set in ~/.termux/termux.properties\n" +
                             "• the install failed — open Termux and run ~/.trmx/trmx status\n" +
-                            "• Termux was killed by Android (phantom process limits)"))
+                            "• Termux was killed by Android (phantom process limits)\n" +
+                            "Last network error: ${r.cause.message}"))
         }
     }
 
