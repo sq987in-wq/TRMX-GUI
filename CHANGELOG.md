@@ -21,6 +21,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
   fixtures in tests.
 - Registry conformance fix: PATH_NOT_EMPTY is 409 per §10 (first
   implementation used 400; the registry check caught it).
+- App client wire-shape fixes (caught by the new FilesTest in CI): query
+  encoding keeps `~` bare (RFC 3986 unreserved — was %-escaped to `%7E`),
+  and §6.3 op requests omit inapplicable optional fields (`new_name`,
+  `dest_dir`) instead of sending explicit nulls — matching
+  `fixtures/v1/files.ops.request.json`; the jobs plane still sends explicit
+  nulls per its fixture.
 - Tests: termux/tests/test_files.py — 17 tests (traversal, shapes, paging,
   ops, interlock, ranges, upload edge cases). Full Termux suite 49/49.
 - ADR-007 records the security-relevant decisions.

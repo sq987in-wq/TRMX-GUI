@@ -96,7 +96,10 @@ class BridgeClient(
 
     suspend fun fileOp(request: FileOpRequest): BridgeResult<FileOpResponse> =
         call("POST", "/v1/files",
-             jsonFormat.encodeToString(FileOpRequest.serializer(), request).toRequestBody(JSON),
+             // §6.3 wire shape: optional fields are omitted when not
+             // applicable (fixtures/v1/files.ops.request.json), unlike the
+             // jobs plane's explicit nulls.
+             opsJson.encodeToString(FileOpRequest.serializer(), request).toRequestBody(JSON),
              extraHeaders = null) { body, _ ->
             jsonFormat.decodeFromString(FileOpResponse.serializer(), body)
         }
@@ -217,9 +220,20 @@ class BridgeClient(
         private val JSON = "application/json; charset=utf-8".toMediaType()
         private val OCTET_STREAM = "application/octet-stream".toMediaType()
 
-        /** URL-encode a path segment for a query param (space → %20, not +). */
+        /** URL-encode a path for a query param (space → %20, not +; ~ is
+         *  RFC 3986 unreserved and stays bare — matches the fixtures' wire
+         *  shape, e.g. path=~%2Fdownloads). A literal "%7E" in a name is
+         *  encoded as %257E by URLEncoder, so this replace is unambiguous. */
         fun enc(s: String): String =
-            java.net.URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+            java.net.URLEncoder.encode(s, "UTF-8")
+                .replace("+", "%20")
+                .replace("%7E", "~")
+
+        /** §6.3 op requests: omit optional fields instead of sending nulls. */
+        val opsJson: Json = Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = false
+        }
 
         fun sha256Of(f: File): String {
             val md = MessageDigest.getInstance("SHA-256")
