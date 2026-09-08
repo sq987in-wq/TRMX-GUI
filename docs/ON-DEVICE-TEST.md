@@ -96,6 +96,15 @@ design working.
 - Report: which step, what the card said, and the tail of `~/.trmx/bridge.log`
   if the bridge was involved. Failure cards include a "Last network error:"
   line — always include it (it named the cleartext bug instantly once added).
+- **401 at handshake / "did the PAIR intent even run?"** — check:
+  `grep -o '"token_generated": [a-z]*' ~/.trmx/bridge.json`
+  `true` = bridge self-generated → the app's PAIR intent never executed →
+  check `cat ~/.termux/termux.properties` (needs `allow-external-apps=true`),
+  run `termux-reload-settings`, restart Termux, retry. `false` = pair ran;
+  a running bridge just needed the STOP→PAIR→START order (wizard does this
+  since round 3). Manual escape hatch: the failure card shows a copyable
+  token — `~/.trmx/trmx stop` → `~/.trmx/trmx pair <token>` →
+  `~/.trmx/trmx start` → Retry.
 - The token is stored in `~/.trmx/bridge.json` (key `"token"`), not a
   `token.secret` file — check with `head -c 200 ~/.trmx/bridge.json`.
 

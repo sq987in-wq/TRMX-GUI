@@ -68,9 +68,20 @@ Design rules:
 
 ## 4. Sequences
 
-**First run (after the three consents):** `INSTALL_PY` → `INSTALL` → `PAIR`
-→ `START` → data-plane handshake. The wizard polls `/v1/system/info` (0.5s
-interval, 30s timeout) after `START` before declaring success.
+**First run (after the three consents):** `INSTALL_PY` → `INSTALL` →
+`STOP` → `PAIR` → `START` → data-plane handshake. The wizard polls
+`/v1/system/info` (0.5s interval, 30s timeout) after `START` before
+declaring success.
+
+- `STOP` before `PAIR` is deliberate and idempotent: a bridge left running
+  (typically started manually in Termux) holds its **old** token in memory
+  and would reject the app's freshly-paired token with 401 until restarted.
+  Stopping first makes the sequence self-contained (on-device round 3).
+- **401 recovery:** if the handshake answers 401, the app self-heals once —
+  `PAIR` → `STOP` → `START` → re-handshake. If it still fails, the card
+  shows the consent checklist and a **manual pairing escape hatch** (the
+  app's token is displayed with a copy button: `trmx stop` → `trmx pair
+  <token>` → `trmx start` → Retry).
 
 **Warm start:** probe `/v1/system/info`; on connection-refused send `START`,
 re-probe; on repeated failure escalate to `TERMUX_NOT_RUNNING` /
@@ -86,7 +97,7 @@ running) → handshake (version check) → `PROTOCOL_MISMATCH` handling if neede
 | `SecurityException` on send / permission not held | `PERMISSION_REQUIRED` | deep link to grant screen |
 | Termux package not found | `TERMUX_NOT_RUNNING` | install/open Termux guidance |
 | Intent accepted, data plane still down after timeout | `BRIDGE_NOT_RUNNING` (probable `allow-external-apps` missing or install failed) | show the one-liner fix; offer `trmx status` intent |
-| Port answers but 401 | `AUTHENTICATION_FAILED` | re-pair wizard |
+| Port answers but 401 | `AUTHENTICATION_FAILED` | automatic PAIR→STOP→START recovery; then checklist + manual pairing (token shown) |
 | Bind failure reported (start intent "succeeded", port never opens, log shows EADDRINUSE) | `PORT_SQUATTED` | change-port flow |
 
 ## 6. On-device verification (Phase 3 DoD)

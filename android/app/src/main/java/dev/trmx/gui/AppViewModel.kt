@@ -151,6 +151,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             applyEvent(WizardEvent.StepSucceeded(WizardStep.PAIR))
         }
         if (step.ordinal < WizardStep.START.ordinal) {
+            // STOP first, always: a bridge left running (e.g. started manually
+            // in Termux) holds its OLD token in memory and would 401 the app
+            // even after a successful pair. Stopping is idempotent — a no-op
+            // when nothing is running (on-device round 3 lesson).
+            if (!sendOp(ControlOps.spec("STOP")!!)) return
+            delay(1_000L)
             if (!sendOp(ControlOps.spec("PAIR")!!)) return
             delay(PAIR_WAIT_MS)
             applyEvent(WizardEvent.StepSucceeded(WizardStep.START))
@@ -179,13 +185,29 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun awaitHandshakeOrFail() {
+    private suspend fun awaitHandshakeOrFail(allowRecovery: Boolean = true) {
         when (val r = handshaker().awaitHandshake()) {
             is BridgeResult.Success -> {
                 applyEvent(WizardEvent.StepSucceeded(WizardStep.DONE))
                 refresh()
             }
-            is BridgeResult.HttpError -> failHandshake(r)
+            is BridgeResult.HttpError -> {
+                // 401 with a reachable bridge: our token is not the bridge's
+                // token. Self-heal once: re-pair, restart, retry. If intents
+                // cannot reach Termux, the failure card offers manual pairing.
+                if (r.status == 401 && allowRecovery) {
+                    applyEvent(WizardEvent.StepStarted(
+                        "token rejected — re-pairing and restarting the bridge…"))
+                    if (!sendOp(ControlOps.spec("PAIR")!!)) return
+                    delay(2_000L)
+                    if (!sendOp(ControlOps.spec("STOP")!!)) return
+                    delay(2_000L)
+                    if (!sendOp(ControlOps.spec("START")!!)) return
+                    awaitHandshakeOrFail(allowRecovery = false)
+                } else {
+                    failHandshake(r)
+                }
+            }
             is BridgeResult.NetworkError ->
                 applyEvent(
                     WizardEvent.StepFailed(
@@ -199,7 +221,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun failHandshake(r: BridgeResult.HttpError) {
         val hint = if (r.status == 401) {
-            "The bridge rejected our token (HTTP 401). Re-run pairing from the wizard."
+            "The bridge rejected our token (HTTP 401) — pairing did not take effect.\n" +
+                "Checklist:\n" +
+                "• TRMX holds the Termux:Run Command permission (App info → Permissions)\n" +
+                                "• ~/.termux/termux.properties contains allow-external-apps=true\n" +
+                                "  (then run termux-reload-settings and restart Termux)\n" +
+                "• no other bridge instance is running with an old token\n" +
+                "If Termux is not running our commands, use manual pairing below."
         } else {
             "The bridge answered with HTTP ${r.status} (${r.code})."
         }

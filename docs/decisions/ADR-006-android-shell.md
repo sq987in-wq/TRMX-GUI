@@ -46,7 +46,15 @@ compiler gate for the app.
    `res/xml/network_security_config.xml` (loopback only, conformance-checked);
    handshake failure cards now surface the underlying transport error so this
    class self-diagnoses.
-4. *Reading CI logs from the restricted sandbox.* The log zip lives on
+4. *On-device round 3: stale token vs. silent intents.* A manually started
+   bridge keeps its own token in memory; pairing then 401s until restart —
+   the wizard now sends STOP before PAIR (idempotent) and self-heals a 401
+   once via PAIR→STOP→START, then falls back to a checklist card plus a
+   manual-pairing escape hatch (visible, copyable token). Diagnostic that
+   disambiguates "intent never ran" from "stale token":
+   `token_generated` in `~/.trmx/bridge.json` (true = bridge-generated,
+   false = app-paired).
+5. *Reading CI logs from the restricted sandbox.* The log zip lives on
    a blocked host, but `gh api repos/…/actions/jobs/{id}/logs` mints a
    signed plain-text URL (visible in its EOF error output) that the
    platform page fetcher CAN read — the full loop stayed autonomous.

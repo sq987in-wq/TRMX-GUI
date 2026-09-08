@@ -241,4 +241,25 @@ private fun ProgressBody(
             }
         }
     }
+
+    // Escape hatch: if intents cannot reach Termux, pair manually.
+    if (state.step == WizardStep.HANDSHAKE && state.failure != null && state.token.isNotEmpty()) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Manual pairing (if Termux is not running our commands)",
+                     fontWeight = FontWeight.Bold)
+                val clipboard = LocalClipboardManager.current
+                OutlinedButton(onClick = { clipboard.setText(AnnotatedString(state.token)) }) {
+                    Text("Copy pairing token", fontFamily = FontFamily.Monospace)
+                }
+                Text(
+                    "In Termux, run:\n" +
+                        "  ~/.trmx/trmx stop\n" +
+                        "  ~/.trmx/trmx pair <paste-token>\n" +
+                        "  ~/.trmx/trmx start\n" +
+                        "then tap “Retry this step” here.",
+                    style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
 }

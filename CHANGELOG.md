@@ -6,6 +6,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Fixed — third on-device round (2026-09-08): pairing flow robustness
+- **STOP before PAIR in the wizard sequence** (idempotent): a bridge left
+  running — e.g. started manually in Termux — holds its old token in memory
+  and 401-rejects the app's fresh token until restarted. Stopping first
+  makes the sequence self-contained.
+- **401 self-healing:** handshake 401 now triggers one automatic
+  PAIR → STOP → START → re-handshake recovery before failing.
+- **Actionable 401 card + manual pairing escape hatch:** the failure card
+  lists the consent checklist; the app's token is shown with a copy button
+  (`trmx stop` → `trmx pair <token>` → `trmx start` → Retry) so setup can
+  finish even when intents cannot reach Termux.
+- Diagnostic documented: `token_generated` in `~/.trmx/bridge.json` tells
+  "intent never ran" (true) from "stale token" (false).
+
+
 ### Fixed — second on-device test round (2026-09-08)
 - **Missing INTERNET permission (root cause of `socket failed: EPERM`).**
   Even loopback sockets require `android.permission.INTERNET`; on API 34+
