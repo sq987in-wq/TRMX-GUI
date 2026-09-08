@@ -63,15 +63,18 @@ class SseClient(
                 var event: String? = null
                 var id: Long? = null
                 val data = StringBuilder()
+                fun resetBlock() {
+                    event = null
+                    id = null
+                    data.setLength(0)
+                }
                 while (true) {
-                    val line = source.readUtf8Line() ?: break   // EOF → flow completes
+                    val line = source.readUtf8Line() ?: break   // EOF → flush below
                     when {
                         line.isEmpty() -> {
                             if (event != null || data.isNotEmpty()) {
                                 emit(SseFrame(event ?: "message", id, data.toString()))
-                                event = null
-                                id = null
-                                data.setLength(0)
+                                resetBlock()
                             }
                         }
                         line.startsWith(":") -> {}                    // ping / comment
@@ -86,6 +89,12 @@ class SseClient(
                         line.startsWith("retry:") -> {}               // we drive retries
                         else -> {}                                    // unknown field
                     }
+                }
+                // EOF: a stream may end right after the last data line with a
+                // single newline (the normative fixtures do) — a pending frame
+                // must still be delivered, not silently dropped.
+                if (event != null || data.isNotEmpty()) {
+                    emit(SseFrame(event ?: "message", id, data.toString()))
                 }
             }
         } finally {
