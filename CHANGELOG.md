@@ -6,6 +6,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Fixed — second on-device test round (2026-09-08)
+- **Missing INTERNET permission (root cause of `socket failed: EPERM`).**
+  Even loopback sockets require `android.permission.INTERNET`; on API 34+
+  its absence surfaces as EPERM (not the older EACCES). The manifest now
+  declares it (conformance-checked). The round-1 cleartext fix was necessary
+  but not sufficient — this second layer was masked behind it.
+- **Stable debug signing.** Ephemeral CI runners mint a fresh random debug
+  keystore per build, so every artifact APK was signed differently and could
+  not be installed over the previous one. A committed PKCS12 test keystore
+  (`android/config/debug.keystore`, alias `androiddebugkey`, public
+  passwords) now signs all debug builds — in-place updates work from this
+  build on. Release signing with a secret keystore remains Phase 11.
+
 ### Fixed — first on-device test round (2026-09-08)
 - **Cleartext loopback was blocked (root cause of the wizard handshake
   timeout).** Android 9+ blocks cleartext HTTP by default for targetSdk>=28;

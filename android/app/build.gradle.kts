@@ -16,7 +16,25 @@ android {
         versionName = "0.1.0"
     }
 
+    signingConfigs {
+        // Stable CI/debug signing: runners are ephemeral and would otherwise
+        // generate a fresh random debug key per build (=> every artifact
+        // signed differently => no in-place updates on devices).
+        // This is a TEST key with public passwords — debug builds only;
+        // release signing with a secret keystore is Phase 11 (ADR-006).
+        getByName("debug") {
+            storeFile = rootProject.file("config/debug.keystore")
+            storeType = "PKCS12"
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false   // Phase 10: R8 + rules
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

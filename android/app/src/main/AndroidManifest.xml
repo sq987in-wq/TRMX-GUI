@@ -4,6 +4,9 @@
     <!-- Control plane: lets us send RUN_COMMAND intents to Termux.
          Granted by the user in OUR App Info → Permissions (consent screen 2). -->
     <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
+    <!-- Required even for loopback sockets: without it, socket() fails with
+         EPERM on API 34+ (on-device round 2 lesson, 2026-09-08). -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Package visibility (Android 11+): we need to see Termux to check
          it is installed before offering the wizard. -->

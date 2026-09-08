@@ -149,6 +149,17 @@ if nsc_path.is_file():
           'android:networkSecurityConfig="@xml/network_security_config"' in manifest)
 check("no blanket cleartext fallback in manifest",
       'android:usesCleartextTraffic="true"' not in manifest)
+check("INTERNET permission declared (loopback sockets need it too)",
+      'android:name="android.permission.INTERNET"' in manifest)
+# stable debug signing: ephemeral CI runners must not mint a new key per build
+ks = REPO / "android" / "config" / "debug.keystore"
+check("stable debug keystore committed", ks.is_file())
+if ks.is_file():
+    check("keystore is PKCS12 with the debug alias+password conventions",
+          ks.read_bytes()[:2] == b"\x30\x82")   # DER/ASN.1 header
+app_gradle = (REPO / "android" / "app" / "build.gradle.kts").read_text("utf-8")
+check("debug build type uses the committed keystore",
+      'config/debug.keystore' in app_gradle and 'storeType = "PKCS12"' in app_gradle)
 
 # --- 5. Kotlin comment balance (nested comments!) ---------------------------
 

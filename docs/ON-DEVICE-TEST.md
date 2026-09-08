@@ -28,6 +28,13 @@ https://raw.githubusercontent.com/sq987in-wq/TRMX-GUI/arena/01a07bc5-trmx-gui/te
 3. Install the TRMX app: download `trmx-debug-apk` artifact from the latest
    green Actions run (GitHub → Actions → run → Artifacts), unzip, install the
    APK (allow "install unknown apps" for your browser/file manager).
+   > One-time note: artifacts built before 2026-09-08 round 2 were signed
+   > with per-run random keys, so updating over them fails with a signature
+   > mismatch — uninstall the old TRMX once, then install. From the round-2
+   > build on, all artifacts share a stable test key and update in place.
+   > After a reinstall the app has no token: stop the bridge first
+   > (`~/.trmx/trmx stop` in Termux) so the wizard's PAIR + START re-pair
+   > cleanly, then re-run the wizard.
 4. Grant the permission: Android Settings → Apps → TRMX → Permissions →
    Additional permissions → **Termux: Run Command** → allow. (The wizard has
    a button that deep-links to this screen.)
