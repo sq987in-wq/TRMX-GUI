@@ -86,8 +86,11 @@ check("token placeholder appears only in the PAIR op",
       f"count in SPECS block={specs_block.count('<' + 'TOKEN' + '>')}")
 
 print("2. data-plane routes (BridgeClient.kt ↔ docs/PROTOCOL.md)")
-client_kt = (REPO / "android" / "app" / "src" / "main" / "java" / "dev" / "trmx" / "gui"
-             / "net" / "BridgeClient.kt").read_text("utf-8")
+_gui = REPO / "android" / "app" / "src" / "main" / "java" / "dev" / "trmx" / "gui"
+client_kt = "\n".join(
+    (_gui / "net" / f if (f in ("BridgeClient.kt", "SseClient.kt")) else _gui / f)
+    .read_text("utf-8")
+    for f in ("BridgeClient.kt", "SseClient.kt", "AppViewModel.kt"))
 protocol = (REPO / "docs" / "PROTOCOL.md").read_text("utf-8")
 routes = {r.split("?")[0] for r in re.findall(r'"(/v1/[a-zA-Z0-9/?=&$_-]+)"', client_kt)}
 # normalize Kotlin path templates ("$jobId") to the spec's {id} spelling
@@ -104,26 +107,30 @@ check("optional wire fields are encoded explicitly (env: null etc.)",
 
 # --- 3. embedded fixture payloads are byte-identical ------------------------
 
-print("3. embedded fixture payloads (BridgeClientTest.kt ↔ fixtures/v1)")
-test_kt = (REPO / "android" / "app" / "src" / "test" / "java" / "dev" / "trmx" / "gui"
-           / "BridgeClientTest.kt").read_text("utf-8")
-blocks = [b.strip() for b in re.findall(r'"""(.*?)"""', test_kt, re.S)]
-fixtures = {p.name: p.read_text("utf-8").strip()
-            for p in (REPO / "fixtures" / "v1").glob("*.json")}
-check("embedded payload block count looks right", len(blocks) >= 8, f"got {len(blocks)}")
-for b in blocks:
-    byte_matches = [name for name, text in fixtures.items() if text == b]
-    json_matches = []
-    if not byte_matches:
-        try:
-            parsed = json.loads(b)
-            json_matches = [name for name, text in fixtures.items()
-                            if json.loads(text) == parsed]
-        except ValueError:
-            pass
-    check("embedded payload matches a fixture (byte-identical or JSON-equal)",
-          len(byte_matches) + len(json_matches) == 1,
-          f"byte={byte_matches} json={json_matches}")
+print("3. embedded fixture payloads (test sources ↔ fixtures/v1)")
+fixtures = {f.name: f.read_text("utf-8").strip()
+            for f in (REPO / "fixtures" / "v1").iterdir()
+            if f.suffix in (".json", ".txt")}
+all_blocks = 0
+for tf in sorted((REPO / "android" / "app" / "src" / "test").rglob("*.kt")):
+    blocks = [b.strip() for b in re.findall(r'"""(.*?)"""', tf.read_text("utf-8"), re.S)]
+    for b in blocks:
+        if "\n" not in b:
+            continue   # single-line raw strings are synthetic test payloads, not fixtures
+        all_blocks += 1
+        byte_matches = [n for n, t in fixtures.items() if t == b]
+        json_matches = []
+        if not byte_matches:
+            try:
+                parsed = json.loads(b)
+                json_matches = [n for n, t in fixtures.items()
+                                if t.lstrip().startswith("{") and json.loads(t) == parsed]
+            except ValueError:
+                pass
+        check(f"{tf.name}: embedded payload matches a fixture (byte or JSON)",
+              len(byte_matches) + len(json_matches) == 1,
+              f"byte={byte_matches} json={json_matches}")
+check("embedded payload block count looks right", all_blocks >= 10, f"got {all_blocks}")
 
 # --- 4. manifest declarations ----------------------------------------------
 

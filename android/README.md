@@ -1,6 +1,6 @@
 # android/ — TRMX-GUI native app
 
-**Status: Phases 4–5 (app shell + wizard + job management) — ON-DEVICE VERIFIED on Android 16 (2026-09-08): full wizard flow, 3 jobs executed exit 0 ([ADR-006](../docs/decisions/ADR-006-android-shell.md) records the 3 fix rounds).**
+**Status: Phases 4–6 (shell + wizard + jobs + live streaming) — 4–5 on-device verified on Android 16; Phase 6 CI-green, on-device round pending ([ADR-006](../docs/decisions/ADR-006-android-shell.md)).**
 
 Native Android app (Kotlin + Jetpack Compose). The app is a *disposable control
 plane*: it drives Termux through `RUN_COMMAND` intents (control plane, see
@@ -63,4 +63,8 @@ gate, since the dev sandbox has no JDK/Android SDK.
   with confirmation
 - spec conformance: `python3 tests/spec_conformance.py` (also in CI)
 
-Live SSE output streaming, files, tools: Phases 6–9.
+- **live output console** in job detail: full replay + live follow (SSE),
+  stdout/stderr filter, auto-scroll, ring-eviction honesty; dashboard job
+  list updates in real time via the events stream
+
+Files, tools: Phases 7–9.

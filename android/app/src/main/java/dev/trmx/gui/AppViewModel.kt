@@ -13,6 +13,8 @@ import androidx.lifecycle.viewModelScope
 import dev.trmx.gui.control.ControlOps
 import dev.trmx.gui.control.ControlPlaneException
 import dev.trmx.gui.control.IntentControlPlane
+import dev.trmx.gui.job.JobOutputState
+import dev.trmx.gui.job.OutputReducer
 import dev.trmx.gui.job.SubmitValidator
 import dev.trmx.gui.model.JobSummary
 import dev.trmx.gui.model.SubmitRequest
@@ -20,6 +22,8 @@ import dev.trmx.gui.model.SystemInfo
 import dev.trmx.gui.net.BridgeClient
 import dev.trmx.gui.net.BridgeResult
 import dev.trmx.gui.net.Handshaker
+import dev.trmx.gui.net.SseClient
+import dev.trmx.gui.net.SseFrame
 import dev.trmx.gui.store.TokenStore
 import dev.trmx.gui.wizard.WizardEngine
 import dev.trmx.gui.wizard.WizardEvent
@@ -32,8 +36,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import okhttp3.OkHttpClient
 import java.util.UUID
 
@@ -80,11 +90,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _detail = MutableStateFlow<JobDetailState?>(null)
     val detail = _detail.asStateFlow()
 
+    private val _output = MutableStateFlow<JobOutputState?>(null)
+    val output = _output.asStateFlow()
+
     fun isTermuxInstalled(): Boolean = controlPlane.isTermuxInstalled()
 
     private var sequenceJob: Job? = null
     private var pollJob: Job? = null
+    private var outputJob: Job? = null
+    private var eventsJob: Job? = null
     private val skipSignal = Channel<Unit>(Channel.CONFLATED)
+
+    private fun sseClient() = SseClient(store.bridgeBaseUrl, store.token, http)
 
     init {
         if (store.isPaired) warmStart()
@@ -125,9 +142,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun resetWizard() {
         sequenceJob?.cancel()
+        pollJob?.cancel()
+        outputJob?.cancel()
+        eventsJob?.cancel()
         skipSignal.tryReceive()
         applyEvent(WizardEvent.Reset)
         _dashboard.value = DashboardState()
+        _output.value = null
     }
 
     /**
@@ -323,10 +344,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectJob(jobId: String?) {
         pollJob?.cancel()
+        outputJob?.cancel()
         if (jobId == null) {
             _detail.value = null
+            _output.value = null
         } else {
             _detail.value = JobDetailState(jobId)
+            _output.value = OutputReducer.initial()
+            startOutput(jobId)
             pollJob = viewModelScope.launch {
                 while (isActive) {
                     when (val r = client().getJob(jobId)) {
@@ -357,6 +382,123 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     _detail.update { it?.copy(cancelling = false, error = "HTTP ${r.status}: ${r.code} — ${r.message}") }
                 is BridgeResult.NetworkError ->
                     _detail.update { it?.copy(cancelling = false, error = "bridge unreachable: ${r.cause.message}") }
+            }
+        }
+    }
+
+    // ---- live output stream (Phase 6) -----------------------------------
+
+    /**
+     * Open /v1/jobs/{id}/output with full replay (from_seq=1) + live follow.
+     * On connection loss the stream resumes from the last delivered seq
+     * (the bridge's from_seq replay makes resume seamless); a normal close
+     * after a terminal status frame ends collection.
+     */
+    private fun startOutput(jobId: String) {
+        outputJob?.cancel()
+        outputJob = viewModelScope.launch {
+            var fromSeq = 1L
+            var attempts = 0
+            while (isActive) {
+                try {
+                    sseClient()
+                        .stream("/v1/jobs/$jobId/output?from_seq=$fromSeq&follow=1&stream=both")
+                        .collect { frame ->
+                            _output.value = OutputReducer.apply(
+                                _output.value ?: OutputReducer.initial(), frame)
+                            if (frame.event == "status") mergeStatusIntoDetail(frame.data)
+                            fromSeq = (_output.value?.lastSeq ?: (fromSeq - 1)) + 1
+                        }
+                    // stream ended normally — done if a terminal status came through
+                    if (_output.value?.ended == true) return@launch
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // connection lost — retry below
+                }
+                attempts++
+                if (attempts >= 30) {
+                    _output.update { it?.copy(error = "stream lost after $attempts reconnect attempts") }
+                    return@launch
+                }
+                delay(1_000L)
+            }
+        }
+    }
+
+    /** Re-open the output stream from seq 1 (fresh replay). */
+    fun replayOutput() {
+        val id = _detail.value?.jobId ?: return
+        _output.value = OutputReducer.initial()
+        startOutput(id)
+    }
+
+    /** Live status frames also refresh the job detail header. */
+    private fun mergeStatusIntoDetail(data: String) {
+        val el = runCatching {
+            BridgeClient.jsonFormat.parseToJsonElement(data).jsonObject
+        }.getOrNull() ?: return
+        fun str(k: String) = el[k]?.jsonPrimitive?.contentOrNull
+        _detail.update { d ->
+            d?.copy(job = d.job?.copy(
+                status = str("status") ?: d.job.status,
+                exit_code = el["exit_code"]?.jsonPrimitive?.longOrNull ?: d.job.exit_code,
+                ended_at = str("ended_at") ?: d.job.ended_at,
+                progress_pct = el["progress_pct"]?.jsonPrimitive?.doubleOrNull
+                    ?: d.job.progress_pct,
+                progress_detail = str("progress_detail") ?: d.job.progress_detail,
+            ))
+        }
+    }
+
+    // ---- global event stream (Phase 6) ----------------------------------
+
+    /** Subscribe to /v1/events while the dashboard is visible. */
+    fun startEvents() {
+        if (eventsJob?.isActive == true) return
+        eventsJob = viewModelScope.launch {
+            while (isActive) {
+                try {
+                    sseClient().stream("/v1/events").collect { frame -> onEvent(frame) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // bridge stopped or connection lost — retry below
+                }
+                delay(2_000L)
+            }
+        }
+    }
+
+    fun stopEvents() {
+        eventsJob?.cancel()
+        eventsJob = null
+    }
+
+    private fun onEvent(frame: SseFrame) {
+        when (frame.event) {
+            "job.updated" -> {
+                val job = runCatching {
+                    BridgeClient.jsonFormat.decodeFromString(JobSummary.serializer(), frame.data)
+                }.getOrNull() ?: return
+                _dashboard.update { d ->
+                    val idx = d.jobs.indexOfFirst { it.job_id == job.job_id }
+                    val jobs = if (idx >= 0) {
+                        d.jobs.toMutableList().also { it[idx] = job }
+                    } else {
+                        listOf(job) + d.jobs
+                    }
+                    d.copy(jobs = jobs)
+                }
+            }
+            "bridge.stopping" -> {
+                val reason = runCatching {
+                    BridgeClient.jsonFormat.parseToJsonElement(frame.data)
+                        .jsonObject["reason"]?.jsonPrimitive?.contentOrNull
+                }.getOrNull()
+                _dashboard.update {
+                    it.copy(notice = "bridge stopping (${reason ?: "unknown"}) — will reconnect")
+                }
             }
         }
     }
@@ -402,6 +544,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun handshaker() =
         Handshaker(probe = { probe() }, pollIntervalMs = 500, maxAttempts = 60)
+
+    override fun onCleared() {
+        sequenceJob?.cancel()
+        pollJob?.cancel()
+        outputJob?.cancel()
+        eventsJob?.cancel()
+        super.onCleared()
+    }
 
     companion object {
         private const val INSTALL_PY_WAIT_MS = 40_000L

@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -32,6 +33,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
     val dashboard by vm.dashboard.collectAsStateWithLifecycle()
     val submitForm by vm.submitForm.collectAsStateWithLifecycle()
     val detail by vm.detail.collectAsStateWithLifecycle()
+    val output by vm.output.collectAsStateWithLifecycle()
     val termuxInstalled = remember { vm.isTermuxInstalled() }
 
     when {
@@ -54,11 +56,18 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
             if (detailState != null) {
                 JobDetailScreen(
                     state = detailState,
+                    output = output,
                     onBack = { vm.selectJob(null) },
                     onCancelJob = vm::cancelJob,
+                    onReplayOutput = vm::replayOutput,
                 )
             } else {
                 LaunchedEffect(Unit) { if (dashboard.info == null) vm.refresh() }
+                // live job events while the dashboard is visible
+                DisposableEffect(Unit) {
+                    vm.startEvents()
+                    onDispose { vm.stopEvents() }
+                }
                 DashboardScreen(
                     state = dashboard,
                     submitForm = submitForm,

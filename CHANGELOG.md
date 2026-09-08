@@ -6,6 +6,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Added — Phase 6: live output streaming (SSE) (2026-09-08)
+- **`SseClient`** (pure JVM, OkHttp/Okio): TRMX-P/1 §4 stream parser —
+  `event:`/`id:`/`data:` frames, ping/retry lines ignored, multi-line data
+  joined, coroutine-cancellation wired to socket close; non-2xx surfaces as
+  `SseHttpException`. Tested against byte-identical copies of both normative
+  stream fixtures (`jobs.output.stream.txt`, `events.stream.txt`).
+- **`OutputReducer`** (pure): frames → console state — stdout/stderr lines,
+  status markers ("— COMPLETED (exit 0) —"), evicted-ring honesty flag,
+  terminal detection, unknown-event tolerance, malformed-data tolerance,
+  1000-line / 200 KB UI budget enforced from the front.
+- **Job detail → live console**: full replay (from_seq=1) + live follow,
+  stdout/stderr filter, auto-scroll toggle, "replay from start", stderr
+  tinted; live `status` frames also update the detail header; stream
+  resumes from the last delivered seq on connection loss (up to 30
+  attempts), ends cleanly after a terminal status frame.
+- **Dashboard auto-update**: `/v1/events` subscription while the dashboard
+  is visible — `job.updated` events apply directly to the job list,
+  `bridge.stopping` shows a notice; reconnects with 2 s backoff.
+- Conformance: SSE routes checked against PROTOCOL.md; embedded-fixture
+  matching generalized to all test files (multi-line raw strings must match
+  a fixture byte-identically or JSON-equal).
+
+
 ### Verified — on-device end-to-end (Android 16, 2026-09-08)
 Phases 4–5 closed with real hardware: wizard → install → pair → start →
 handshake → three jobs (J-1…J-3) completed with exit code 0, bridge fully
