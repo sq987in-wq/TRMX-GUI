@@ -1,6 +1,6 @@
 # android/ — TRMX-GUI native app
 
-**Status: Phases 4–6 (shell + wizard + jobs + live streaming) — 4–5 on-device verified on Android 16; Phase 6 CI-green, on-device round pending ([ADR-006](../docs/decisions/ADR-006-android-shell.md)).**
+**Status: Phases 4–7 (shell + wizard + jobs + streaming + files) — 4–6 on-device verified on Android 16; Phase 7 CI-green, on-device round pending (ADRs [006](../docs/decisions/ADR-006-android-shell.md), [007](../docs/decisions/ADR-007-file-manager.md)).**
 
 Native Android app (Kotlin + Jetpack Compose). The app is a *disposable control
 plane*: it drives Termux through `RUN_COMMAND` intents (control plane, see
@@ -67,4 +67,8 @@ gate, since the dev sandbox has no JDK/Android SDK.
   stdout/stderr filter, auto-scroll, ring-eviction honesty; dashboard job
   list updates in real time via the events stream
 
-Files, tools: Phases 7–9.
+- **file browser**: navigate the Termux home (list/stat per PROTOCOL §6),
+  new folder, rename, delete (recursive+confirm interlock surfaced in the
+  UI), download to app storage, upload via the document picker
+
+Tools: Phases 8–9.

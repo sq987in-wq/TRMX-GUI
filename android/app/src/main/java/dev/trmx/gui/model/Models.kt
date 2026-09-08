@@ -80,6 +80,47 @@ data class CancelRequest(
     val force: Boolean,
 )
 
+/** GET /v1/files entry (PROTOCOL §6.2). */
+@Serializable
+data class FileEntry(
+    val name: String = "",
+    val type: String = "",        // file | dir | symlink | other
+    val size: Long = 0,
+    val mtime: String? = null,
+    val mode: String? = null,
+    val target: String? = null,   // set for symlinks (display path)
+)
+
+@Serializable
+data class FileListResponse(
+    val path: String = "",
+    val entries: List<FileEntry> = emptyList(),
+    val next_offset: Int? = null,
+)
+
+@Serializable
+data class FileStatResponse(
+    val path: String = "",
+    val entry: FileEntry? = null,
+)
+
+/** POST /v1/files operation request (PROTOCOL §6.3). */
+@Serializable
+data class FileOpRequest(
+    val op: String,                       // mkdir|touch|rename|move|copy|delete
+    val path: String,
+    val recursive: Boolean? = null,
+    val confirm: Boolean? = null,
+    val new_name: String? = null,
+    val dest_dir: String? = null,
+)
+
+@Serializable
+data class FileOpResponse(
+    val ok: Boolean = false,
+    val entries_moved: Long? = null,
+)
+
 /** POST /v1/jobs response: {"job_id":…, "status":…} + Idempotent-Replay header. */
 @Serializable
 data class SubmitResponse(

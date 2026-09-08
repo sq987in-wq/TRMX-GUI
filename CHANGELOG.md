@@ -6,6 +6,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Added — Phase 7: file manager (both planes) (2026-09-08)
+- **Bridge v0.3.0 — PROTOCOL §6 implemented in full**: list/stat with
+  1000-entry paging, mkdir/touch/rename/move/copy/delete with the
+  recursive-delete confirm interlock, ranged download (206/416), and
+  streaming atomic upload (temp+fsync+rename, optional X-TRMX-Sha256 → 422,
+  411 without Content-Length, 2 GiB cap). Path policy: realpath containment
+  (blocks escapes and outward links) while operations act on the normalized
+  path — deleting a symlink removes the link, never its target (a real bug
+  the new test suite caught). $PREFIX stays unwritable.
+- **App file browser**: navigate/create-folder/rename/delete (with explicit
+  recursive+irreversible warnings), download into app-accessible storage,
+  upload via the system document picker — all against byte-identical
+  fixtures in tests.
+- Registry conformance fix: PATH_NOT_EMPTY is 409 per §10 (first
+  implementation used 400; the registry check caught it).
+- Tests: termux/tests/test_files.py — 17 tests (traversal, shapes, paging,
+  ops, interlock, ranges, upload edge cases). Full Termux suite 49/49.
+- ADR-007 records the security-relevant decisions.
+
+
 ### Added — Phase 6: live output streaming (SSE) (2026-09-08)
 - **`SseClient`** (pure JVM, OkHttp/Okio): TRMX-P/1 §4 stream parser —
   `event:`/`id:`/`data:` frames, ping/retry lines ignored, multi-line data

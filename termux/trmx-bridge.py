@@ -35,6 +35,7 @@ import argparse
 import asyncio
 import codecs
 import datetime as dt
+import hashlib
 import hmac
 import itertools
 import json
@@ -46,13 +47,14 @@ import shlex  # noqa: F401  (used by later phases; kept for interface stability)
 import shutil
 import signal
 import sqlite3
+import stat as stat_mod
 import sys
 import time
 from collections import deque
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 PROTOCOL_VERSIONS = [1]
 
 LOG = logging.getLogger("trmx-bridge")
@@ -60,7 +62,8 @@ LOG = logging.getLogger("trmx-bridge")
 TERMINAL_STATES = {"COMPLETED", "FAILED", "CANCELLED", "LOST"}
 ACTIVE_STATES = {"QUEUED", "STARTING", "RUNNING", "CANCELLING"}
 HTTP_REASONS = {
-    200: "OK", 201: "Created", 400: "Bad Request", 401: "Unauthorized",
+    200: "OK", 201: "Created", 206: "Partial Content",
+    400: "Bad Request", 401: "Unauthorized",
     403: "Forbidden", 404: "Not Found", 405: "Method Not Allowed",
     409: "Conflict", 411: "Length Required", 413: "Payload Too Large",
     415: "Unsupported Media Type", 416: "Range Not Satisfiable",
@@ -69,6 +72,9 @@ HTTP_REASONS = {
 }
 MAX_HEADER_BYTES = 16384
 MAX_JSON_BODY = 1 << 20  # 1 MiB (PROTOCOL §1.2)
+MAX_UPLOAD_BODY = 2 << 30            # 2 GiB (PROTOCOL §6.5)
+FILES_PAGE_SIZE = 1000               # PROTOCOL §6.2
+UPLOAD_CHUNK = 1 << 16               # 64 KiB stream chunks
 
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 RESERVED_ENV = {"TRMX_JOB_ID", "TRMX_TOKEN"}
@@ -400,6 +406,51 @@ class Policy:
             if p.is_file() and os.access(p, os.X_OK):
                 return str(p)
         return None
+
+    # ---- file endpoints (PROTOCOL §6.1) ---------------------------------
+
+    def file_roots(self) -> list[Path]:
+        # realpath()-ed at call time (spec: resolved at policy load; we
+        # resolve per request — same effect, tolerates dirs appearing later)
+        return [r.resolve() for r in self.roots if r.exists()]
+
+    def resolve_in_roots(self, raw: str, for_write: bool = False) -> Path:
+        """Expand a user path and enforce §6.1 containment.
+
+        A path is allowed iff its realpath lies under a resolved root. For
+        not-yet-existing paths (mkdir/touch/upload dest) the PARENT's
+        realpath decides — realpath of a missing leaf is undefined.
+        """
+        if not isinstance(raw, str) or not raw:
+            raise BridgeError(400, "VALIDATION_FAILED", "path must be a non-empty string",
+                              field="path")
+        expanded = Path(os.path.normpath(os.path.expanduser(raw)))
+        if not expanded.is_absolute():
+            raise BridgeError(400, "VALIDATION_FAILED",
+                              "path must be absolute or ~-prefixed", field="path")
+        # containment per §6.1: REALPATH decides (blocks ~/../… escapes and
+        # links pointing outside the roots)…
+        real = expanded.resolve()
+        probe = real if real.exists() else real.parent
+        roots = self.file_roots()
+        if not any(probe == r or r in probe.parents for r in roots):
+            raise BridgeError(403, "PATH_DENIED",
+                              f"path outside policy roots: {raw}", field="path")
+        if for_write and self.prefix:
+            if probe == self.prefix or self.prefix in probe.parents:
+                raise BridgeError(403, "PATH_DENIED",
+                                  "$PREFIX is never writable via the API", field="path")
+        # …but the OPERATION acts on the normalized path itself, so e.g.
+        # deleting a symlink removes the LINK, never its target (on-device
+        # lesson from the Phase 7 test suite, 2026-09-08)
+        return expanded
+
+    def display_path(self, abs_path: Path) -> str:
+        try:
+            rel = abs_path.relative_to(self.user_home)
+            return "~" if str(rel) == "." else "~/" + str(rel)
+        except ValueError:
+            return str(abs_path)
 
     def check_cwd(self, raw: str) -> Path:
         expanded = Path(os.path.expanduser(raw)).resolve()
@@ -880,11 +931,28 @@ def shlex_join(parts: list[str]) -> str:
 # =========================================================================== HTTP layer
 
 class Request:
-    __slots__ = ("method", "path", "query", "headers", "body", "keep_alive")
+    __slots__ = ("method", "path", "query", "headers", "body", "keep_alive",
+                 "content_length")
 
-    def __init__(self, method, path, query, headers, body, keep_alive):
+    def __init__(self, method, path, query, headers, body, keep_alive,
+                 content_length=None):
         self.method, self.path, self.query = method, path, query
         self.headers, self.body, self.keep_alive = headers, body, keep_alive
+        self.content_length = content_length
+
+
+class RawStream:
+    """Marker: handler wants the raw writer (binary download, keep-alive ok)."""
+
+    def __init__(self, fn):
+        self.fn = fn  # async fn(writer, keep_alive) -> None
+
+
+class UploadStream:
+    """Marker: upload — body is still on the wire; fn streams it to disk."""
+
+    def __init__(self, fn):
+        self.fn = fn  # async fn(reader, writer, keep_alive) -> None
 
 
 class JsonResponse:
@@ -915,6 +983,7 @@ class BridgeApp:
         self.bus = EventBus()
         self.manager = JobManager(home, self.store, config, self.policy, self.bus)
         self.started = time.time()
+        self._upload_seq = itertools.count(1)
         self.routes = [
             ("GET", re.compile(r"^/v1/system/info$"), self.h_system_info),
             ("GET", re.compile(r"^/v1/system/policy$"), self.h_system_policy),
@@ -923,6 +992,10 @@ class BridgeApp:
             ("GET", re.compile(r"^/v1/jobs/([A-Za-z0-9-]+)$"), self.h_job_get),
             ("POST", re.compile(r"^/v1/jobs/([A-Za-z0-9-]+)/cancel$"), self.h_job_cancel),
             ("GET", re.compile(r"^/v1/jobs/([A-Za-z0-9-]+)/output$"), self.h_job_output),
+            ("GET", re.compile(r"^/v1/files$"), self.h_files_list),
+            ("POST", re.compile(r"^/v1/files$"), self.h_files_ops),
+            ("GET", re.compile(r"^/v1/files/content$"), self.h_file_download),
+            ("PUT", re.compile(r"^/v1/files/content$"), self.h_file_upload),
             ("GET", re.compile(r"^/v1/events$"), self.h_events),
             ("POST", re.compile(r"^/v1/system/bridge$"), self.h_bridge_ctl),
         ]
@@ -950,7 +1023,10 @@ class BridgeApp:
                             await asyncio.sleep(min(2 ** (failures - 5) * 2, 60))
                     else:
                         failures = 0
-                    keep = req.keep_alive and e.status < 500 and e.status not in (400, 413)
+                    # an upload body may still be unread on the wire — the
+                    # connection cannot be reused after an error
+                    keep = (req.keep_alive and req.content_length is None
+                            and e.status < 500 and e.status not in (400, 413))
                     await self.send_error(writer, e, keep_alive=keep)
                     if not keep:
                         break
@@ -965,6 +1041,22 @@ class BridgeApp:
                     except (ConnectionResetError, BrokenPipeError, OSError):
                         pass
                     break  # stream consumed the connection
+                if isinstance(result, RawStream):
+                    try:
+                        keep_open = await result.fn(writer, req.keep_alive)
+                    except (ConnectionResetError, BrokenPipeError, OSError):
+                        break
+                    if not (keep_open and req.keep_alive):
+                        break
+                    continue
+                if isinstance(result, UploadStream):
+                    try:
+                        keep_open = await result.fn(reader, writer, req.keep_alive)
+                    except (ConnectionResetError, BrokenPipeError, OSError):
+                        break
+                    if not (keep_open and req.keep_alive):
+                        break
+                    continue
                 await self.send_json(writer, result, keep_alive=req.keep_alive)
                 if not req.keep_alive:
                     break
@@ -999,6 +1091,23 @@ class BridgeApp:
             raise BridgeError(400, "VALIDATION_FAILED",
                               "transfer-encoding not supported; send Content-Length")
         keep_alive = headers.get("connection", "").lower() != "close"
+        u = urlsplit(target)
+        query = {k: v[0] for k, v in parse_qs(u.query, keep_blank_values=True).items()}
+        # PROTOCOL §6.5: uploads stream to disk — never buffer the body.
+        if method.upper() == "PUT" and unquote(u.path) == "/v1/files/content":
+            if "content-length" not in headers:
+                raise BridgeError(411, "LENGTH_REQUIRED",
+                                  "upload requires Content-Length")
+            try:
+                n = int(headers["content-length"])
+            except ValueError:
+                raise BridgeError(400, "VALIDATION_FAILED", "bad Content-Length")
+            if n < 0 or n > MAX_UPLOAD_BODY:
+                raise BridgeError(413, "PAYLOAD_TOO_LARGE",
+                                  f"upload exceeds {MAX_UPLOAD_BODY} bytes")
+            # 100-continue is sent by the upload handler AFTER path validation
+            return Request("PUT", unquote(u.path), query, headers, b"",
+                           keep_alive, content_length=n)
         body = b""
         if "content-length" in headers:
             try:
@@ -1016,8 +1125,6 @@ class BridgeApp:
                     body = await reader.readexactly(n)
                 except asyncio.IncompleteReadError:
                     raise BridgeError(400, "VALIDATION_FAILED", "truncated body")
-        u = urlsplit(target)
-        query = {k: v[0] for k, v in parse_qs(u.query, keep_blank_values=True).items()}
         return Request(method.upper(), unquote(u.path), query, headers, body, keep_alive)
 
     async def dispatch(self, req: Request):
@@ -1192,6 +1299,276 @@ class BridgeApp:
             raise BridgeError(400, "VALIDATION_FAILED", "force must be a boolean", field="force")
         job = await self.manager.cancel(m.group(1), grace_ms, force)
         return JsonResponse(job)
+
+    # ---- files (PROTOCOL §6) ----------------------------------------------
+
+    FILES_OPS = {"mkdir", "touch", "rename", "move", "copy", "delete"}
+
+    def _file_entry(self, p: Path) -> dict:
+        st = p.lstat()
+        mode = stat_mod.filemode(st.st_mode)
+        if stat_mod.S_ISLNK(st.st_mode):
+            ftype = "symlink"
+            try:
+                target = self.policy.display_path(Path(os.path.realpath(p)))
+            except OSError:
+                target = os.readlink(p)
+        elif stat_mod.S_ISDIR(st.st_mode):
+            ftype, target = "dir", None
+        elif stat_mod.S_ISREG(st.st_mode):
+            ftype, target = "file", None
+        else:
+            ftype, target = "other", None
+        mtime = dt.datetime.fromtimestamp(st.st_mtime, dt.timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ")
+        return {"name": p.name, "type": ftype, "size": st.st_size,
+                "mtime": mtime, "mode": mode, "target": target}
+
+    async def h_files_list(self, req, m):
+        raw = req.query.get("path", "~")
+        try:
+            offset = int(req.query.get("offset", "0"))
+        except ValueError:
+            raise BridgeError(400, "VALIDATION_FAILED", "offset must be an int", field="offset")
+        if offset < 0:
+            raise BridgeError(400, "VALIDATION_FAILED", "offset must be >= 0", field="offset")
+        real = self.policy.resolve_in_roots(raw)
+        if not real.exists():
+            raise BridgeError(404, "PATH_NOT_FOUND", f"no such path: {raw}")
+        display = self.policy.display_path(real)
+        if req.query.get("stat", "0") == "1":
+            return JsonResponse({"path": display, "entry": self._file_entry(real)})
+        if not real.is_dir():
+            raise BridgeError(400, "NOT_A_DIRECTORY",
+                              f"not a directory (use stat=1 for the entry itself): {raw}")
+        try:
+            entries = sorted(real.iterdir(), key=lambda e: e.name)
+        except OSError as e:
+            raise BridgeError(403, "PATH_DENIED", f"cannot list directory: {e}")
+        page = entries[offset:offset + FILES_PAGE_SIZE]
+        out = {"path": display, "entries": [self._file_entry(e) for e in page]}
+        if offset + FILES_PAGE_SIZE < len(entries):
+            out["next_offset"] = offset + FILES_PAGE_SIZE
+        return JsonResponse(out)
+
+    async def h_files_ops(self, req, m):
+        body = self.parse_json_body(req)
+        op = body.get("op")
+        if op not in self.FILES_OPS:
+            raise BridgeError(400, "VALIDATION_FAILED",
+                              f"op must be one of {sorted(self.FILES_OPS)}", field="op")
+        raw = body.get("path")
+        real = self.policy.resolve_in_roots(raw, for_write=True)
+
+        if op == "mkdir":
+            recursive = bool(body.get("recursive", False))
+            if real.exists():
+                raise BridgeError(409, "PATH_EXISTS", f"already exists: {raw}")
+            if not real.parent.is_dir():
+                raise BridgeError(404, "PATH_NOT_FOUND", f"parent missing: {raw}")
+            if recursive:
+                os.makedirs(real)
+            else:
+                os.mkdir(real)
+            return JsonResponse({"ok": True})
+
+        if op == "touch":
+            if real.exists():
+                os.utime(real, None)
+            else:
+                if not real.parent.is_dir():
+                    raise BridgeError(404, "PATH_NOT_FOUND", f"parent missing: {raw}")
+                with open(real, "xb"):
+                    pass
+            return JsonResponse({"ok": True})
+
+        if op == "rename":
+            new_name = body.get("new_name")
+            if (not isinstance(new_name, str) or not new_name or "/" in new_name
+                    or new_name in (".", "..")):
+                raise BridgeError(400, "VALIDATION_FAILED",
+                                  "new_name must be a bare name (no slashes)", field="new_name")
+            if not os.path.lexists(real):
+                raise BridgeError(404, "PATH_NOT_FOUND", f"no such path: {raw}")
+            dest = real.parent / new_name
+            if os.path.lexists(dest):
+                raise BridgeError(409, "PATH_EXISTS", f"destination exists: {new_name}")
+            os.rename(real, dest)
+            return JsonResponse({"ok": True})
+
+        if op in ("move", "copy"):
+            dest_dir_raw = body.get("dest_dir")
+            dest_dir = self.policy.resolve_in_roots(dest_dir_raw, for_write=True)
+            if not dest_dir.is_dir():
+                raise BridgeError(404, "PATH_NOT_FOUND", f"dest_dir missing: {dest_dir_raw}",
+                                  field="dest_dir")
+            if not os.path.lexists(real):
+                raise BridgeError(404, "PATH_NOT_FOUND", f"no such path: {raw}")
+            dest = dest_dir / real.name
+            if os.path.lexists(dest):
+                raise BridgeError(409, "PATH_EXISTS", f"destination exists: {dest.name}")
+            if op == "move":
+                shutil.move(str(real), str(dest))
+                return JsonResponse({"ok": True, "entries_moved": 1})
+            if real.is_dir():
+                shutil.copytree(real, dest)
+                moved = len(os.listdir(dest))
+            else:
+                shutil.copy2(real, dest)
+                moved = 1
+            return JsonResponse({"ok": True, "entries_moved": moved})
+
+        if op == "delete":
+            if not os.path.lexists(real):
+                raise BridgeError(404, "PATH_NOT_FOUND", f"no such path: {raw}")
+            if real.is_dir() and not real.is_symlink():
+                if body.get("recursive"):
+                    if not body.get("confirm"):
+                        raise BridgeError(400, "CONFIRM_REQUIRED",
+                                          "recursive delete of a directory requires confirm:true")
+                    shutil.rmtree(real)
+                else:
+                    if os.listdir(real):
+                        raise BridgeError(409, "PATH_NOT_EMPTY",   # §10 registry status
+                                          "directory not empty (recursive:true + confirm:true)")
+                    os.rmdir(real)
+            else:
+                os.unlink(real)
+            return JsonResponse({"ok": True})
+
+        raise BridgeError(500, "INTERNAL", "unreachable")
+
+    async def h_file_download(self, req, m):
+        raw = req.query.get("path")
+        if not raw:
+            raise BridgeError(400, "VALIDATION_FAILED", "path query parameter required",
+                              field="path")
+        real = self.policy.resolve_in_roots(raw)
+        if not real.exists():
+            raise BridgeError(404, "PATH_NOT_FOUND", f"no such path: {raw}")
+        if real.is_dir():
+            raise BridgeError(400, "NOT_A_FILE", "cannot download a directory")
+        size = real.stat().st_size
+        status, start, length, content_range = 200, 0, size, None
+        range_header = req.headers.get("range")
+        if range_header:
+            rm = re.match(r"^bytes=(\d*)-(\d*)$", range_header.strip())
+            ok = bool(rm) and (rm.group(1) or rm.group(2))
+            if ok:
+                if rm.group(1):
+                    a = int(rm.group(1))
+                    b = int(rm.group(2)) if rm.group(2) else size - 1
+                    ok = a < size and a <= b
+                    if ok:
+                        b = min(b, size - 1)
+                        start, length = a, b - a + 1
+                else:
+                    n = int(rm.group(2))
+                    if n == 0 or size == 0:
+                        ok = False
+                    else:
+                        start = max(0, size - n)
+                        length = size - start
+            if not ok:
+                async def bad_range(writer, keep_alive):
+                    body = json.dumps({"error": {"code": "RANGE_NOT_SATISFIABLE",
+                                                 "message": f"bad Range: {range_header}"}},
+                                      separators=(",", ":")).encode()
+                    head = ("HTTP/1.1 416 Range Not Satisfiable\r\n"
+                            "Content-Type: application/json\r\n"
+                            f"Content-Range: bytes */{size}\r\n"
+                            f"Content-Length: {len(body)}\r\n"
+                            f"Connection: {'keep-alive' if keep_alive else 'close'}\r\n\r\n")
+                    writer.write(head.encode("iso-8859-1") + body)
+                    await writer.drain()
+                    return True
+                return RawStream(bad_range)
+            status = 206
+            content_range = f"bytes {start}-{start + length - 1}/{size}"
+
+        async def run(writer, keep_alive):
+            head = (f"HTTP/1.1 {status} {HTTP_REASONS.get(status, 'OK')}\r\n"
+                    "Content-Type: application/octet-stream\r\n"
+                    f"Content-Length: {length}\r\n"
+                    "Accept-Ranges: bytes\r\n")
+            if content_range:
+                head += f"Content-Range: {content_range}\r\n"
+            head += f"Connection: {'keep-alive' if keep_alive else 'close'}\r\n\r\n"
+            writer.write(head.encode("iso-8859-1"))
+            await writer.drain()
+            with open(real, "rb") as f:
+                f.seek(start)
+                remaining = length
+                while remaining > 0:
+                    chunk = f.read(min(UPLOAD_CHUNK, remaining))
+                    if not chunk:
+                        break
+                    writer.write(chunk)
+                    await writer.drain()
+                    remaining -= len(chunk)
+            return True
+        return RawStream(run)
+
+    async def h_file_upload(self, req, m):
+        raw = req.query.get("path")
+        if not raw:
+            raise BridgeError(400, "VALIDATION_FAILED", "path query parameter required",
+                              field="path")
+        overwrite = req.query.get("overwrite", "0") == "1"
+        sha_want = req.headers.get("x-trmx-sha256")
+        if sha_want is not None and not re.match(r"^[0-9a-f]{64}$", sha_want):
+            raise BridgeError(400, "VALIDATION_FAILED",
+                              "X-TRMX-Sha256 must be 64 lowercase hex chars", field="sha256")
+        real = self.policy.resolve_in_roots(raw, for_write=True)
+        if real.exists():
+            if not overwrite:
+                raise BridgeError(409, "PATH_EXISTS",
+                                  f"already exists (overwrite=1 to replace): {raw}")
+            if real.is_dir():
+                raise BridgeError(400, "NOT_A_FILE", "cannot upload over a directory")
+        if not real.parent.is_dir():
+            raise BridgeError(404, "PATH_NOT_FOUND", f"parent directory missing: {raw}")
+        total = req.content_length or 0
+        expect_continue = req.headers.get("expect", "").lower() == "100-continue"
+        app = self
+
+        async def run(reader, writer, keep_alive):
+            if expect_continue:
+                writer.write(b"HTTP/1.1 100 Continue\r\n\r\n")
+                await writer.drain()
+            tmp = real.parent / f".trmx-upload-{os.getpid()}-{next(app._upload_seq)}"
+            hasher = hashlib.sha256() if sha_want else None
+            try:
+                with open(tmp, "wb") as f:
+                    remaining = total
+                    while remaining > 0:
+                        chunk = await reader.read(min(UPLOAD_CHUNK, remaining))
+                        if not chunk:
+                            tmp.unlink(missing_ok=True)
+                            raise ConnectionError("client disconnected mid-upload")
+                        f.write(chunk)
+                        if hasher:
+                            hasher.update(chunk)
+                        remaining -= len(chunk)
+                    f.flush()
+                    os.fsync(f.fileno())
+                if hasher and hasher.hexdigest() != sha_want:
+                    tmp.unlink(missing_ok=True)
+                    await app.send_json(
+                        writer,
+                        JsonResponse({"error": {"code": "CHECKSUM_MISMATCH",
+                                               "message": "X-TRMX-Sha256 does not match body"}},
+                                     422),
+                        keep_alive=False)
+                    return False
+                os.replace(tmp, real)
+                app.store.audit("file.upload", f"{real.name} {total}B")
+                await app.send_json(writer, JsonResponse({"ok": True}), keep_alive=keep_alive)
+                return True
+            except Exception:
+                tmp.unlink(missing_ok=True)
+                raise
+        return UploadStream(run)
 
     async def h_job_output(self, req, m):
         job_id = m.group(1)

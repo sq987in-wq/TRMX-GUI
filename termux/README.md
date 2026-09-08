@@ -13,6 +13,7 @@ termux/
   tests/
     test_bridge.py     # 19-test bridge suite (real TCP, real subprocess)
     test_bootstrap.py  # 12-test bootstrap suite (installer + lifecycle commands)
+    test_files.py      # 17-test file-endpoint suite (PROTOCOL §6)
     run_tests.sh       #   → sh termux/tests/run_tests.sh [bridge|bootstrap|all]
     smoke.sh           # the human-visible Phase 2 demo
     intent_commands.sh # prints the adb commands for all 8 control-plane ops

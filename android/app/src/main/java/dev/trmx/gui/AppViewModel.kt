@@ -14,8 +14,10 @@ import dev.trmx.gui.control.ControlOps
 import dev.trmx.gui.control.ControlPlaneException
 import dev.trmx.gui.control.IntentControlPlane
 import dev.trmx.gui.job.JobOutputState
+import dev.trmx.gui.model.FileEntry
 import dev.trmx.gui.job.OutputReducer
 import dev.trmx.gui.job.SubmitValidator
+import dev.trmx.gui.model.FileOpRequest
 import dev.trmx.gui.model.JobSummary
 import dev.trmx.gui.model.SubmitRequest
 import dev.trmx.gui.model.SystemInfo
@@ -44,7 +46,9 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import android.net.Uri
 import okhttp3.OkHttpClient
+import java.io.File
 import java.util.UUID
 
 data class DashboardState(
@@ -62,6 +66,15 @@ data class SubmitFormState(
     val timeoutText: String = "",
     val submitting: Boolean = false,
     val errors: List<SubmitValidator.FieldError> = emptyList(),
+)
+
+data class FileBrowserState(
+    val path: String = "~",
+    val entries: List<FileEntry> = emptyList(),
+    val loading: Boolean = false,
+    val error: String? = null,
+    val notice: String? = null,
+    val opPending: Boolean = false,
 )
 
 data class JobDetailState(
@@ -92,6 +105,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _output = MutableStateFlow<JobOutputState?>(null)
     val output = _output.asStateFlow()
+
+    private val _files = MutableStateFlow(FileBrowserState())
+    val files = _files.asStateFlow()
 
     fun isTermuxInstalled(): Boolean = controlPlane.isTermuxInstalled()
 
@@ -149,6 +165,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         applyEvent(WizardEvent.Reset)
         _dashboard.value = DashboardState()
         _output.value = null
+        _files.value = FileBrowserState()
     }
 
     /**
@@ -385,6 +402,129 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
+
+    // ---- file browser (Phase 7) ------------------------------------------
+
+    fun openPath(path: String) {
+        _files.update { it.copy(path = path, loading = true, error = null, notice = null) }
+        viewModelScope.launch {
+            when (val r = client().listFiles(path)) {
+                is BridgeResult.Success ->
+                    _files.update { it.copy(entries = r.data.entries, loading = false) }
+                is BridgeResult.HttpError ->
+                    _files.update { it.copy(loading = false, error = "HTTP ${r.status}: ${r.code} — ${r.message}") }
+                is BridgeResult.NetworkError ->
+                    _files.update { it.copy(loading = false, error = "bridge unreachable: ${r.cause.message}") }
+            }
+        }
+    }
+
+    fun refreshFiles() = openPath(_files.value.path)
+
+    fun filesUp() {
+        val cur = _files.value.path
+        if (cur == "~") return
+        val parent = cur.removeSuffix("/").substringBeforeLast('/')
+        openPath(if (parent.isEmpty() || parent == "~") "~" else parent)
+    }
+
+    fun openEntry(entry: FileEntry) {
+        if (entry.type == "dir") {
+            val base = _files.value.path.trimEnd('/')
+            openPath("$base/${entry.name}")
+        }
+    }
+
+    fun makeDir(name: String) {
+        val base = _files.value.path.trimEnd('/')
+        runOp(FileOpRequest(op = "mkdir", path = "$base/$name"))
+    }
+
+    fun renameEntry(entry: FileEntry, newName: String) {
+        val base = _files.value.path.trimEnd('/')
+        runOp(FileOpRequest(op = "rename", path = "$base/${entry.name}", new_name = newName))
+    }
+
+    fun deleteEntry(entry: FileEntry) {
+        val base = _files.value.path.trimEnd('/')
+        val req = if (entry.type == "dir") {
+            FileOpRequest(op = "delete", path = "$base/${entry.name}",
+                          recursive = true, confirm = true)
+        } else {
+            FileOpRequest(op = "delete", path = "$base/${entry.name}")
+        }
+        runOp(req)
+    }
+
+    private fun runOp(req: FileOpRequest) {
+        _files.update { it.copy(opPending = true, error = null, notice = null) }
+        viewModelScope.launch {
+            when (val r = client().fileOp(req)) {
+                is BridgeResult.Success -> {
+                    _files.update { it.copy(opPending = false, notice = "${req.op}: ok") }
+                    refreshFiles()
+                }
+                is BridgeResult.HttpError ->
+                    _files.update { it.copy(opPending = false, error = "${req.op} failed: HTTP ${r.status} ${r.code} — ${r.message}") }
+                is BridgeResult.NetworkError ->
+                    _files.update { it.copy(opPending = false, error = "bridge unreachable: ${r.cause.message}") }
+            }
+        }
+    }
+
+    /** Download into the app's external files dir (no permissions needed). */
+    fun downloadEntry(entry: FileEntry) {
+        val base = _files.value.path.trimEnd('/')
+        val remote = "$base/${entry.name}"
+        _files.update { it.copy(opPending = true, notice = "downloading ${entry.name}…", error = null) }
+        viewModelScope.launch {
+            val destDir = getApplication<Application>()
+                .getExternalFilesDir(android.content.Environment.DIRECTORY_DOCUMENTS)
+                ?: getApplication<Application>().filesDir
+            val dest = File(destDir, entry.name)
+            when (val r = client().downloadFile(remote, dest)) {
+                is BridgeResult.Success ->
+                    _files.update { it.copy(opPending = false,
+                                            notice = "saved ${r.data} bytes → ${dest.absolutePath}") }
+                is BridgeResult.HttpError ->
+                    _files.update { it.copy(opPending = false, error = "download failed: HTTP ${r.status} ${r.code}") }
+                is BridgeResult.NetworkError ->
+                    _files.update { it.copy(opPending = false, error = "download failed: ${r.cause.message}") }
+            }
+        }
+    }
+
+    /** Upload a picked document into the current directory. */
+    fun uploadFromUri(uri: Uri, displayName: String) {
+        val base = _files.value.path.trimEnd('/')
+        val dest = "$base/$displayName"
+        _files.update { it.copy(opPending = true, notice = "uploading $displayName…", error = null) }
+        viewModelScope.launch {
+            val tmp = File(getApplication<Application>().cacheDir, "upload-$${System.currentTimeMillis()}")
+            try {
+                val resolver = getApplication<Application>().contentResolver
+                resolver.openInputStream(uri)?.use { input ->
+                    tmp.outputStream().use { input.copyTo(it) }
+                } ?: throw java.io.IOException("cannot open picked document")
+                when (val r = client().uploadFile(dest, tmp)) {
+                    is BridgeResult.Success -> {
+                        _files.update { it.copy(opPending = false, notice = "uploaded $displayName") }
+                        refreshFiles()
+                    }
+                    is BridgeResult.HttpError ->
+                        _files.update { it.copy(opPending = false, error = "upload failed: HTTP ${r.status} ${r.code} — ${r.message}") }
+                    is BridgeResult.NetworkError ->
+                        _files.update { it.copy(opPending = false, error = "upload failed: ${r.cause.message}") }
+                }
+            } catch (e: Exception) {
+                _files.update { it.copy(opPending = false, error = "upload failed: ${e.message}") }
+            } finally {
+                tmp.delete()
+            }
+        }
+    }
+
+    fun clearFilesNotice() = _files.update { it.copy(notice = null, error = null) }
 
     // ---- live output stream (Phase 6) -----------------------------------
 

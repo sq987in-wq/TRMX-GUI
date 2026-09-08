@@ -13,6 +13,10 @@ package dev.trmx.gui.net
 
 import dev.trmx.gui.model.CancelRequest
 import dev.trmx.gui.model.ErrorEnvelope
+import dev.trmx.gui.model.FileListResponse
+import dev.trmx.gui.model.FileOpRequest
+import dev.trmx.gui.model.FileOpResponse
+import dev.trmx.gui.model.FileStatResponse
 import dev.trmx.gui.model.JobSummary
 import dev.trmx.gui.model.JobsPage
 import dev.trmx.gui.model.SubmitOutcome
@@ -27,8 +31,13 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.IOException
+import java.security.MessageDigest
 
 sealed interface BridgeResult<out T> {
     data class Success<T>(val data: T) : BridgeResult<T>
@@ -73,6 +82,84 @@ class BridgeClient(
             jsonFormat.decodeFromString(JobSummary.serializer(), body)
         }
 
+    // ---- files (PROTOCOL §6) ----------------------------------------------
+
+    suspend fun listFiles(path: String, offset: Int = 0): BridgeResult<FileListResponse> =
+        get("/v1/files?path=${enc(path)}&offset=$offset") { body, _ ->
+            jsonFormat.decodeFromString(FileListResponse.serializer(), body)
+        }
+
+    suspend fun statFile(path: String): BridgeResult<FileStatResponse> =
+        get("/v1/files?path=${enc(path)}&stat=1") { body, _ ->
+            jsonFormat.decodeFromString(FileStatResponse.serializer(), body)
+        }
+
+    suspend fun fileOp(request: FileOpRequest): BridgeResult<FileOpResponse> =
+        call("POST", "/v1/files",
+             jsonFormat.encodeToString(FileOpRequest.serializer(), request).toRequestBody(JSON),
+             extraHeaders = null) { body, _ ->
+            jsonFormat.decodeFromString(FileOpResponse.serializer(), body)
+        }
+
+    /** Streamed download to [dest]; Content-Length verified when present. */
+    suspend fun downloadFile(path: String, dest: File): BridgeResult<Long> =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url(baseUrl + "/v1/files/content?path=" + enc(path))
+                .header("Authorization", "Bearer $token")
+                .header(PROTOCOL_HEADER, PROTOCOL_VERSION)
+                .get()
+                .build()
+            try {
+                client.newCall(request).execute().use { resp ->
+                    val body = resp.body ?: throw IOException("empty body")
+                    if (!resp.isSuccessful) {
+                        val text = body.string()
+                        val err = runCatching {
+                            jsonFormat.decodeFromString(ErrorEnvelope.serializer(), text).error
+                        }.getOrNull()
+                        BridgeResult.HttpError(resp.code, err?.code ?: "HTTP_${resp.code}",
+                                                err?.message ?: text.take(200))
+                    } else {
+                        dest.parentFile?.mkdirs()
+                        val expected = resp.headers["Content-Length"]?.toLongOrNull()
+                        var copied = 0L
+                        FileOutputStream(dest).use { out ->
+                            body.byteStream().use { input ->
+                                copied = input.copyTo(out, 64 * 1024)
+                            }
+                        }
+                        if (expected != null && copied != expected) {
+                            dest.delete()
+                            BridgeResult.NetworkError(
+                                IOException("truncated download: $copied of $expected bytes"))
+                        } else {
+                            BridgeResult.Success(copied)
+                        }
+                    }
+                }
+            } catch (e: IOException) {
+                BridgeResult.NetworkError(e)
+            } catch (e: Exception) {
+                BridgeResult.NetworkError(e)
+            }
+        }
+
+    /**
+     * Streaming upload from [src] (PROTOCOL §6.5): temp-then-rename on the
+     * bridge side, so a partial upload never leaves a partial file.
+     * X-TRMX-Sha256 is computed over the file and verified by the bridge.
+     */
+    suspend fun uploadFile(path: String, src: File, overwrite: Boolean = false): BridgeResult<Unit> =
+        withContext(Dispatchers.IO) {
+            val sha = sha256Of(src)
+            val body = src.asRequestBody(OCTET_STREAM)
+            callRaw("PUT",
+                    "/v1/files/content?path=" + enc(path) +
+                        "&overwrite=${if (overwrite) "1" else "0"}",
+                    body, mapOf("X-TRMX-Sha256" to sha)) { _, _ -> }
+        }
+
     // ---- internals -----------------------------------------------------
 
     private suspend fun <T> get(
@@ -85,11 +172,21 @@ class BridgeClient(
         path: String,
         body: RequestBody?,
         parse: (body: String, headers: Headers) -> T,
+        extraHeaders: Map<String, String>? = null,
+    ): BridgeResult<T> = callRaw(method, path, body, extraHeaders, parse)
+
+    private suspend fun <T> callRaw(
+        method: String,
+        path: String,
+        body: RequestBody?,
+        extraHeaders: Map<String, String>?,
+        parse: (body: String, headers: Headers) -> T,
     ): BridgeResult<T> = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url(baseUrl + path)
             .header("Authorization", "Bearer $token")
             .header(PROTOCOL_HEADER, PROTOCOL_VERSION)
+            .apply { extraHeaders?.forEach { (k, v) -> header(k, v) } }
             .method(method, body)
             .build()
         try {
@@ -118,6 +215,24 @@ class BridgeClient(
         const val PROTOCOL_HEADER = "X-TRMX-Protocol"
         const val PROTOCOL_VERSION = "1"
         private val JSON = "application/json; charset=utf-8".toMediaType()
+        private val OCTET_STREAM = "application/octet-stream".toMediaType()
+
+        /** URL-encode a path segment for a query param (space → %20, not +). */
+        fun enc(s: String): String =
+            java.net.URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+
+        fun sha256Of(f: File): String {
+            val md = MessageDigest.getInstance("SHA-256")
+            FileInputStream(f).use { input ->
+                val buf = ByteArray(64 * 1024)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n <= 0) break
+                    md.update(buf, 0, n)
+                }
+            }
+            return md.digest().joinToString("") { "%02x".format(it) }
+        }
 
         val jsonFormat: Json = Json {
             ignoreUnknownKeys = true

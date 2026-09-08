@@ -62,6 +62,7 @@ fun DashboardScreen(
     onSubmitCwd: (String) -> Unit,
     onSubmitTimeout: (String) -> Unit,
     onSubmitJob: () -> Unit,
+    onOpenFiles: () -> Unit,
 ) {
     var showSubmit by remember { mutableStateOf(false) }
 
@@ -100,6 +101,7 @@ fun DashboardScreen(
             Button(onClick = onRefresh, enabled = !state.refreshing) {
                 Text(if (state.refreshing) "Refreshing…" else "Refresh")
             }
+            Button(onClick = onOpenFiles) { Text("Files") }
             OutlinedButton(onClick = onRerunWizard) { Text("Re-run setup") }
             OutlinedButton(onClick = onStopBridge) { Text("Stop bridge") }
         }

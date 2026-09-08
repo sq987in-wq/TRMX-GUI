@@ -2,6 +2,7 @@ package dev.trmx.gui
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -11,10 +12,15 @@ import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.trmx.gui.ui.DashboardScreen
+import dev.trmx.gui.ui.FilesScreen
 import dev.trmx.gui.ui.JobDetailScreen
 import dev.trmx.gui.ui.TRMXTheme
 import dev.trmx.gui.ui.WizardScreen
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import dev.trmx.gui.wizard.WizardStep
+
+private enum class Screen { DASHBOARD, FILES }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,7 +40,9 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
     val submitForm by vm.submitForm.collectAsStateWithLifecycle()
     val detail by vm.detail.collectAsStateWithLifecycle()
     val output by vm.output.collectAsStateWithLifecycle()
+    val filesState by vm.files.collectAsStateWithLifecycle()
     val termuxInstalled = remember { vm.isTermuxInstalled() }
+    var screen by remember { mutableStateOf(Screen.DASHBOARD) }
 
     when {
         wizard.step != WizardStep.DONE -> WizardScreen(
@@ -61,6 +69,21 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                     onCancelJob = vm::cancelJob,
                     onReplayOutput = vm::replayOutput,
                 )
+            } else if (screen == Screen.FILES) {
+                BackHandler { screen = Screen.DASHBOARD }
+                LaunchedEffect(Unit) { if (filesState.entries.isEmpty()) vm.openPath(filesState.path) }
+                FilesScreen(
+                    state = filesState,
+                    onBack = { screen = Screen.DASHBOARD },
+                    onOpenPath = vm::openPath,
+                    onUp = vm::filesUp,
+                    onRefresh = vm::refreshFiles,
+                    onMakeDir = vm::makeDir,
+                    onRename = vm::renameEntry,
+                    onDelete = vm::deleteEntry,
+                    onDownload = vm::downloadEntry,
+                    onUpload = vm::uploadFromUri,
+                )
             } else {
                 LaunchedEffect(Unit) { if (dashboard.info == null) vm.refresh() }
                 // live job events while the dashboard is visible
@@ -82,6 +105,10 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                     onSubmitCwd = vm::editCwd,
                     onSubmitTimeout = vm::editTimeout,
                     onSubmitJob = vm::submitJob,
+                    onOpenFiles = {
+                        vm.clearFilesNotice()
+                        screen = Screen.FILES
+                    },
                 )
             }
         }
