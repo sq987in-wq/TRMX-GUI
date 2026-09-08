@@ -131,6 +131,12 @@ design working.
 
 # Phase 7 round — file manager acceptance (2026-09-08)
 
+> **STATUS: VERIFIED ✅ — 2026-09-08, physical device, Android 16.**
+> Bridge upgraded to v0.3.0 in place (wizard Re-run setup) and running
+> stably; `~` listing, navigation, folder create/rename/delete, and file
+> download verified; §6 wire shape and protocol headers (`X-TRMX-Protocol:
+> 1`) confirmed working end-to-end.
+
 **Build:** CI run green on `6cb16d9` (bridge v0.3.0, checksum
 `fe41b16d…f38152`, app with the Files browser). Both planes change this
 round — update the APK **and** the bridge.

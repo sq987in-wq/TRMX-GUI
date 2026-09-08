@@ -32,6 +32,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 - ADR-007 records the security-relevant decisions.
 
 
+### Verified — on-device (Android 16, 2026-09-08)
+Phase 7 closed on real hardware: bridge upgraded to v0.3.0 in place via the
+wizard's Re-run setup (idempotent installer) and running stably; Files
+browser verified — `~` listing, navigation, folder create/rename/delete,
+file download — and the §6 wire shape with protocol headers
+(`X-TRMX-Protocol: 1`) confirmed working end-to-end.
+
+
 ### Added — Phase 6: live output streaming (SSE) (2026-09-08)
 - **`SseClient`** (pure JVM, OkHttp/Okio): TRMX-P/1 §4 stream parser —
   `event:`/`id:`/`data:` frames, ping/retry lines ignored, multi-line data
