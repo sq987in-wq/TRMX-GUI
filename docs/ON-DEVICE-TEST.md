@@ -121,3 +121,61 @@ design working.
 - Plain HTTP on 127.0.0.1 only, bearer-token auth (V1 transport decision).
 - Debug APK is signed with the debug key — fine for testing; release signing
   is Phase 10/11.
+
+> Update: the first two limits above (live output text, manual dashboard
+> refresh) were resolved and verified on-device in the Phase 6 round
+> (2026-09-08): live console with stdout/stderr filter + replay, and the
+> dashboard self-updates via `/v1/events`.
+
+---
+
+# Phase 7 round — file manager acceptance (2026-09-08)
+
+**Build:** CI run green on `6cb16d9` (bridge v0.3.0, checksum
+`fe41b16d…f38152`, app with the Files browser). Both planes change this
+round — update the APK **and** the bridge.
+
+## Update sequence (both planes)
+
+1. **App:** download `trmx-debug-apk` from the latest green Actions run →
+   unzip → install. Updates in place over the round-2+ key (no uninstall,
+   token survives).
+2. **Bridge:** dashboard → **Re-run setup**. The wizard re-runs INSTALL
+   (idempotent `install.sh` — this is the upgrade path) with the base URL
+   from §0, then STOP → PAIR → START → handshake.
+3. **Verify:** dashboard shows **Bridge v0.3.0** (the handshake's
+   `/v1/system/info` reports the version). Termux-side cross-check:
+   `head -c 400 ~/.trmx/bridge.json` or `~/.trmx/trmx status`.
+
+## Acceptance checklist
+
+| # | Action | Expected |
+|---|--------|----------|
+| 1 | Dashboard → **Files** | listing of `~` loads (dirs/files, sizes, glyph per type) |
+| 2 | Tap a directory (e.g. `downloads`) | listing of that dir; "up" row returns |
+| 3 | "New folder" → `trmx-test` | dialog → folder appears in the listing |
+| 4 | Long-press `trmx-test` → Rename → `trmx-renamed` | listing shows the new name |
+| 5 | Long-press `trmx-renamed` → Delete | confirm dialog warns **recursive + irreversible**; confirm → gone |
+| 6 | Long-press a **non-empty** directory → Delete | same interlock: bridge demands `confirm:true`, app sends it after the dialog |
+| 7 | Long-press a file → Download | notice with byte count; file lands in `Android/data/dev.trmx.gui/files/Documents/` (check with a file manager — no storage permission needed or granted) |
+| 8 | "Upload" → pick any file in the system picker | progress → file appears in the listing with the right size |
+| 9 | Dashboard → Files again (or rotate/reopen) | state reloads cleanly; no stale listings after ops (each op refreshes) |
+
+Uploads are atomic on the bridge side (temp + fsync + rename, optional
+SHA-256 the app always sends) — a killed mid-upload never leaves a partial
+file; re-listing after an interrupted upload is a valid extra check.
+
+## Known limits in this round (by design, not bugs)
+
+- No open/share yet: downloading a file is the only way to get it out of
+  Termux storage via the app (FileProvider open/share is Phase 8).
+- TOCTOU window between the path-policy check and the operation (ADR-007) —
+  single-user local threat model, accepted for v1.
+- Copy follows symlinks (shutil semantics) — documented in ADR-007.
+
+## If something breaks
+
+Same as §4, plus: file ops surface typed errors from the bridge
+(`CONFIRM_REQUIRED`, `PATH_NOT_EMPTY`, `PATH_EXISTS`, `NOT_A_FILE`,
+`CHECKSUM_MISMATCH`) — screenshot the exact error text and include the tail
+of `~/.trmx/bridge.log`.
