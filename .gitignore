@@ -13,3 +13,6 @@ local.properties
 captures/
 *.jks
 *.keystore
+# committed on purpose: the stable CI debug-signing test key (public
+# passwords, debug builds only — ADR-006); must not be ignored
+!android/config/debug.keystore
