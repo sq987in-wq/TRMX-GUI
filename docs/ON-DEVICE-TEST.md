@@ -32,6 +32,23 @@ https://raw.githubusercontent.com/sq987in-wq/TRMX-GUI/arena/01a07bc5-trmx-gui/te
    Additional permissions → **Termux: Run Command** → allow. (The wizard has
    a button that deep-links to this screen.)
 
+## 1b. Manual backend setup (alternative — Termux side, no app needed)
+
+```sh
+pkg install -y python curl git
+git clone -b arena/01a07bc5-trmx-gui https://github.com/sq987in-wq/TRMX-GUI
+cd TRMX-GUI
+sh termux/install.sh --source termux     # → "checksums verified", "installed"
+~/.trmx/trmx start                       # bridge on 127.0.0.1:27342
+~/.trmx/trmx status                      # → data-plane: UP
+~/.trmx/trmx stop                        # ⚠️ STOP before pairing with the app
+```
+
+**Why the stop:** the app pairs its *own* token into `~/.trmx/bridge.json`,
+but a *running* bridge keeps the old token in memory until restarted — the
+app's handshake would get 401. Stopping first lets the app's START launch
+the bridge with the app's token. (Safe either way: nothing is lost.)
+
 ## 2. Run the wizard
 
 Open TRMX → confirm the three consent checkboxes (they confirm you did §1) →
