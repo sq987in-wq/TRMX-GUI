@@ -47,6 +47,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import android.net.Uri
+import android.os.Environment
 import okhttp3.OkHttpClient
 import java.io.File
 import java.util.UUID
@@ -479,7 +480,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _files.update { it.copy(opPending = true, notice = "downloading ${entry.name}…", error = null) }
         viewModelScope.launch {
             val destDir = getApplication<Application>()
-                .getExternalFilesDir(android.content.Environment.DIRECTORY_DOCUMENTS)
+                .getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
                 ?: getApplication<Application>().filesDir
             val dest = File(destDir, entry.name)
             when (val r = client().downloadFile(remote, dest)) {

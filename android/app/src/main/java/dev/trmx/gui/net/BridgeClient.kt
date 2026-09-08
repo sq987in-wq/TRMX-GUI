@@ -171,8 +171,8 @@ class BridgeClient(
         method: String,
         path: String,
         body: RequestBody?,
-        parse: (body: String, headers: Headers) -> T,
         extraHeaders: Map<String, String>? = null,
+        parse: (body: String, headers: Headers) -> T,   // last: trailing-lambda call sites
     ): BridgeResult<T> = callRaw(method, path, body, extraHeaders, parse)
 
     private suspend fun <T> callRaw(
