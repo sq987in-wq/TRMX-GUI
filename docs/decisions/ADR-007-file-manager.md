@@ -74,7 +74,8 @@ checksum mismatch + 411. Full Termux suite: 19 + 17 + 13 = **49/49**.
   deletes explain recursiveness + irreversibility in the confirm dialog),
   download into the app's external documents dir (visible to any file
   manager under `Android/data/dev.trmx.gui/files/`), upload via the system
-  document picker. Open/share intents via FileProvider: Phase 8 polish.
+  document picker. Open/share intents via FileProvider: delivered in
+  Phase 8 — see ADR-008.
 - Wire tests against MockWebServer with byte-identical fixtures (the
   delete-op request body is asserted JSON-equal to the normative fixture).
 

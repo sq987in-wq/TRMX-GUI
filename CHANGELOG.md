@@ -6,6 +6,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Added — Phase 8: polish, UX & FileProvider (2026-09-08, app-only)
+- **Open/Share (ADR-008, download-then-open)**: long-press action sheet with
+  Open (ACTION_VIEW) and Share (ACTION_SEND) — the entry streams from the
+  bridge into a single-slot `cache/shared/` staging dir (cleared before each
+  use), exposed read-only through `androidx.core.content.FileProvider`
+  (`file_paths.xml` exposes only `shared/`). No viewer → honest error naming
+  file + MIME with a "try Share" hint, never a silent failure.
+- **`FileMime`**: our own extension→MIME table (JVM-testable, deterministic
+  across OEMs — `MimeTypeMap` regularly lacks mkv — honest
+  `application/octet-stream` fallback).
+- **Transfer progress**: `BridgeClient.downloadFile/uploadFile` gained
+  `onProgress` callbacks (64 KiB chunks); the ViewModel throttles to ~10 Hz;
+  determinate bar when the total is known, indeterminate otherwise, byte
+  counts included. Upload progress streams via `ProgressRequestBody` with
+  byte-identical wire content (test-asserted).
+- **State polish**: three-state Files list (loading / error-with-retry /
+  empty), back walks up the directory tree before exiting Files, honest
+  dashboard status dot, stale Phase-6 footer replaced, long-press hint.
+- **Launcher icon**: adaptive vector `>_` prompt (green chevron, blue
+  underscore) on dark slate + Android 13+ monochrome layer; minSdk 26 means
+  no raster sets.
+- Tests: `FileMimeTest` (4) + 2 progress tests in `FilesTest` (7 → 9);
+  conformance PASS; Termux suite 49/49 (bridge untouched, regression only).
+
 ### Added — Phase 7: file manager (both planes) (2026-09-08)
 - **Bridge v0.3.0 — PROTOCOL §6 implemented in full**: list/stat with
   1000-entry paging, mkdir/touch/rename/move/copy/delete with the

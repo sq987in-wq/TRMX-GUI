@@ -16,10 +16,24 @@
 
     <application
         android:label="TRMX"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true"
         android:theme="@style/Theme.TRMX">
-        <!-- Launcher icon intentionally omitted (system default) — real icon in Phase 8. -->
+
+        <!-- Phase 8: open/share staged bridge files. Only cache/shared/ is
+             exposed, read-only, via explicit URI grants (ADR-008). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="dev.trmx.gui.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <activity
             android:name=".MainActivity"
             android:exported="true">

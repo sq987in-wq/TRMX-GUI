@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TRMX launcher foreground: a terminal prompt ">_" (chevron + underscore)
+     inside the adaptive-icon safe zone (center 66dp of the 108dp canvas).
+     Kept as a stroke vector — no raster assets, scales cleanly. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- chevron -->
+    <path
+        android:pathData="M40,42 L56,54 L40,66"
+        android:strokeColor="#34D399"
+        android:strokeWidth="7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+    <!-- underscore -->
+    <path
+        android:pathData="M62,66 L74,66"
+        android:strokeColor="#7DD3FC"
+        android:strokeWidth="7"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+</vector>

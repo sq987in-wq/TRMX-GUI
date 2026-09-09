@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phase 8 (ADR-008): the ONLY path the FileProvider exposes is the
+     single-slot staging dir for open/share — never the whole cache dir,
+     never app-internal storage. -->
+<paths>
+    <cache-path name="shared" path="shared/" />
+</paths>

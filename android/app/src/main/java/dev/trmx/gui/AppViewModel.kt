@@ -48,6 +48,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import android.net.Uri
 import android.os.Environment
+import dev.trmx.gui.files.FileMime
 import okhttp3.OkHttpClient
 import java.io.File
 import java.util.UUID
@@ -76,6 +77,26 @@ data class FileBrowserState(
     val error: String? = null,
     val notice: String? = null,
     val opPending: Boolean = false,
+    val transfer: Transfer? = null,
+    val pendingOpen: PendingOpen? = null,
+)
+
+/** One in-flight file transfer (download / upload / open / share). */
+data class Transfer(
+    val label: String,        // "Downloading" | "Uploading" | "Opening" | "Sharing"
+    val name: String,
+    val bytes: Long,
+    val total: Long?,         // null → indeterminate progress
+)
+
+/**
+ * A bridge file staged in cache/shared, ready for the UI to fire
+ * ACTION_VIEW / ACTION_SEND through the FileProvider (ADR-008).
+ */
+data class PendingOpen(
+    val path: String,         // absolute local path
+    val mime: String,
+    val share: Boolean,
 )
 
 data class JobDetailState(
@@ -422,18 +443,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refreshFiles() = openPath(_files.value.path)
 
-    fun filesUp() {
+    /** @return true when we moved up, false at the root (caller may pop). */
+    fun filesUp(): Boolean {
         val cur = _files.value.path
-        if (cur == "~") return
+        if (cur == "~") return false
         val parent = cur.removeSuffix("/").substringBeforeLast('/')
         openPath(if (parent.isEmpty() || parent == "~") "~" else parent)
-    }
-
-    fun openEntry(entry: FileEntry) {
-        if (entry.type == "dir") {
-            val base = _files.value.path.trimEnd('/')
-            openPath("$base/${entry.name}")
-        }
+        return true
     }
 
     fun makeDir(name: String) {
@@ -477,29 +493,82 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun downloadEntry(entry: FileEntry) {
         val base = _files.value.path.trimEnd('/')
         val remote = "$base/${entry.name}"
-        _files.update { it.copy(opPending = true, notice = "downloading ${entry.name}…", error = null) }
+        val progress = TransferPoster("Downloading", entry.name)
+        _files.update {
+            it.copy(opPending = true, notice = null, error = null,
+                    transfer = Transfer("Downloading", entry.name, 0, null))
+        }
         viewModelScope.launch {
             val destDir = getApplication<Application>()
                 .getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
                 ?: getApplication<Application>().filesDir
             val dest = File(destDir, entry.name)
-            when (val r = client().downloadFile(remote, dest)) {
+            when (val r = client().downloadFile(remote, dest, progress::onBytes)) {
                 is BridgeResult.Success ->
-                    _files.update { it.copy(opPending = false,
+                    _files.update { it.copy(opPending = false, transfer = null,
                                             notice = "saved ${r.data} bytes → ${dest.absolutePath}") }
                 is BridgeResult.HttpError ->
-                    _files.update { it.copy(opPending = false, error = "download failed: HTTP ${r.status} ${r.code}") }
+                    _files.update { it.copy(opPending = false, transfer = null,
+                                            error = "download failed: HTTP ${r.status} ${r.code}") }
                 is BridgeResult.NetworkError ->
-                    _files.update { it.copy(opPending = false, error = "download failed: ${r.cause.message}") }
+                    _files.update { it.copy(opPending = false, transfer = null,
+                                            error = "download failed: ${r.cause.message}") }
             }
         }
+    }
+
+    /**
+     * Phase 8 download-then-open (ADR-008): stream the entry into the
+     * single-slot cache/shared dir (cleared first, so the cache stays
+     * bounded), then the UI fires ACTION_VIEW / ACTION_SEND through the
+     * FileProvider.
+     */
+    fun openEntry(entry: FileEntry, share: Boolean) {
+        if (entry.type == "dir") return
+        val base = _files.value.path.trimEnd('/')
+        val remote = "$base/${entry.name}"
+        val label = if (share) "Sharing" else "Opening"
+        val progress = TransferPoster(label, entry.name)
+        _files.update {
+            it.copy(opPending = true, notice = null, error = null,
+                    transfer = Transfer(label, entry.name, 0, null))
+        }
+        viewModelScope.launch {
+            val sharedDir = File(getApplication<Application>().cacheDir, "shared")
+            sharedDir.listFiles()?.forEach { it.delete() }   // single slot
+            val dest = File(sharedDir, entry.name)
+            when (val r = client().downloadFile(remote, dest, progress::onBytes)) {
+                is BridgeResult.Success ->
+                    _files.update {
+                        it.copy(opPending = false, transfer = null,
+                                pendingOpen = PendingOpen(
+                                    dest.absolutePath, FileMime.of(entry.name), share))
+                    }
+                is BridgeResult.HttpError ->
+                    _files.update { it.copy(opPending = false, transfer = null,
+                                            error = "${label.lowercase()} failed: " +
+                                                "HTTP ${r.status} ${r.code} — ${r.message}") }
+                is BridgeResult.NetworkError ->
+                    _files.update { it.copy(opPending = false, transfer = null,
+                                            error = "${label.lowercase()} failed: ${r.cause.message}") }
+            }
+        }
+    }
+
+    /** UI fired the open/share intent (or it failed) — clear the slot. */
+    fun afterOpen(error: String?) {
+        _files.update { it.copy(pendingOpen = null, error = error) }
     }
 
     /** Upload a picked document into the current directory. */
     fun uploadFromUri(uri: Uri, displayName: String) {
         val base = _files.value.path.trimEnd('/')
         val dest = "$base/$displayName"
-        _files.update { it.copy(opPending = true, notice = "uploading $displayName…", error = null) }
+        val progress = TransferPoster("Uploading", displayName)
+        _files.update {
+            it.copy(opPending = true, notice = null, error = null,
+                    transfer = Transfer("Uploading", displayName, 0, null))
+        }
         viewModelScope.launch {
             val tmp = File(getApplication<Application>().cacheDir, "upload-$${System.currentTimeMillis()}")
             try {
@@ -507,18 +576,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 resolver.openInputStream(uri)?.use { input ->
                     tmp.outputStream().use { input.copyTo(it) }
                 } ?: throw java.io.IOException("cannot open picked document")
-                when (val r = client().uploadFile(dest, tmp)) {
+                val total = tmp.length()
+                when (val r = client().uploadFile(dest, tmp) { n -> progress.onBytes(n, total) }) {
                     is BridgeResult.Success -> {
-                        _files.update { it.copy(opPending = false, notice = "uploaded $displayName") }
+                        _files.update { it.copy(opPending = false, transfer = null,
+                                                notice = "uploaded $displayName") }
                         refreshFiles()
                     }
                     is BridgeResult.HttpError ->
-                        _files.update { it.copy(opPending = false, error = "upload failed: HTTP ${r.status} ${r.code} — ${r.message}") }
+                        _files.update { it.copy(opPending = false, transfer = null,
+                                                error = "upload failed: HTTP ${r.status} ${r.code} — ${r.message}") }
                     is BridgeResult.NetworkError ->
-                        _files.update { it.copy(opPending = false, error = "upload failed: ${r.cause.message}") }
+                        _files.update { it.copy(opPending = false, transfer = null,
+                                                error = "upload failed: ${r.cause.message}") }
                 }
             } catch (e: Exception) {
-                _files.update { it.copy(opPending = false, error = "upload failed: ${e.message}") }
+                _files.update { it.copy(opPending = false, transfer = null,
+                                        error = "upload failed: ${e.message}") }
             } finally {
                 tmp.delete()
             }
@@ -526,6 +600,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearFilesNotice() = _files.update { it.copy(notice = null, error = null) }
+
+    /** Throttles progress callbacks to ~10 Hz (plus the final value). */
+    private inner class TransferPoster(private val label: String, private val name: String) {
+        private var last = 0L
+
+        fun onBytes(bytes: Long, total: Long?) {
+            val now = android.os.SystemClock.elapsedRealtime()
+            val done = total != null && bytes >= total
+            if (done || now - last >= 100) {
+                last = now
+                _files.update { it.copy(transfer = Transfer(label, name, bytes, total)) }
+            }
+        }
+    }
 
     // ---- live output stream (Phase 6) -----------------------------------
 

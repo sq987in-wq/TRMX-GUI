@@ -70,19 +70,24 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                     onReplayOutput = vm::replayOutput,
                 )
             } else if (screen == Screen.FILES) {
-                BackHandler { screen = Screen.DASHBOARD }
+                // Back walks up the directory tree first, then exits to the
+                // dashboard (Phase 8 back-stack polish).
+                BackHandler { if (!vm.filesUp()) screen = Screen.DASHBOARD }
                 LaunchedEffect(Unit) { if (filesState.entries.isEmpty()) vm.openPath(filesState.path) }
                 FilesScreen(
                     state = filesState,
                     onBack = { screen = Screen.DASHBOARD },
                     onOpenPath = vm::openPath,
-                    onUp = vm::filesUp,
+                    onUp = { vm.filesUp() },
                     onRefresh = vm::refreshFiles,
                     onMakeDir = vm::makeDir,
                     onRename = vm::renameEntry,
                     onDelete = vm::deleteEntry,
                     onDownload = vm::downloadEntry,
                     onUpload = vm::uploadFromUri,
+                    onOpenFile = { vm.openEntry(it, false) },
+                    onShareFile = { vm.openEntry(it, true) },
+                    onAfterOpen = vm::afterOpen,
                 )
             } else {
                 LaunchedEffect(Unit) { if (dashboard.info == null) vm.refresh() }

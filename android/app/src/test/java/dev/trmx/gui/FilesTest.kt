@@ -165,6 +165,54 @@ class FilesTest {
         }
     }
 
+    @Test
+    fun `download reports monotonic progress ending at the total`() = runTest {
+        val body = "0123456789abcdefXY"   // 18 bytes
+        server.enqueue(MockResponse().setBody(body)
+            .setHeader("Content-Type", "application/octet-stream")
+            .setHeader("Content-Length", "18"))
+        val tmp = File.createTempFile("trmx-dl", ".bin")
+        try {
+            val seen = java.util.concurrent.CopyOnWriteArrayList<Pair<Long, Long?>>()
+            val r = client.downloadFile("~/downloads/big.bin", tmp) { bytes, total ->
+                seen.add(bytes to total)
+            }
+            assertTrue(r is BridgeResult.Success)
+            assertEquals(18L, (r as BridgeResult.Success).data)
+            // final sample is exact; every sample monotonic and within bounds
+            assertEquals(18L to 18L, seen.last())
+            seen.zipWithNext().forEach { (a, b) ->
+                assertTrue("progress went backwards: $a -> $b", b.first >= a.first)
+            }
+            seen.forEach { assertTrue(it.first in 1..18) }
+        } finally {
+            tmp.delete()
+        }
+    }
+
+    @Test
+    fun `upload reports progress and the wire still gets the exact bytes`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"ok": true}""")
+            .setHeader("Content-Type", "application/json"))
+        val src = File.createTempFile("trmx-up", ".bin")
+        try {
+            val bytes = ByteArray(200_003) { (it % 251).toByte() }   // not a round chunk multiple
+            src.writeBytes(bytes)
+            val seen = java.util.concurrent.CopyOnWriteArrayList<Long>()
+            val r = client.uploadFile("~/uploads/big.bin", src, overwrite = true) { n ->
+                seen.add(n)
+            }
+            assertTrue("expected success, got $r", r is BridgeResult.Success)
+            assertEquals(200_003L, seen.last())
+            seen.zipWithNext().forEach { (a, b) -> assertTrue(b >= a) }
+            val req = server.takeRequest(5, TimeUnit.SECONDS)!!
+            assertEquals("200003", req.getHeader("Content-Length"))
+            assertTrue(req.body.readByteArray().contentEquals(bytes))
+        } finally {
+            src.delete()
+        }
+    }
+
     companion object {
         // byte-identical to fixtures/v1/files.list.response.json
         private val FILES_LIST_FIXTURE = """

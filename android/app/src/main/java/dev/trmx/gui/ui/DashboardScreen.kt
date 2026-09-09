@@ -76,7 +76,10 @@ fun DashboardScreen(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("TRMX", fontSize = 32.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.width(10.dp))
-            Text("● connected", color = Color(0xFF4CAF50))
+            val connected = state.error == null
+            Text(
+                if (connected) "● connected" else "● connection error",
+                color = if (connected) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error)
             Spacer(Modifier.weight(1f))
             Button(onClick = { onOpenSubmit(); showSubmit = true }) { Text("+ New job") }
         }
@@ -106,8 +109,8 @@ fun DashboardScreen(
             OutlinedButton(onClick = onStopBridge) { Text("Stop bridge") }
         }
         Text(
-            "Live output streaming arrives in Phase 6 — this screen covers " +
-                "submit, list and cancel over the data plane.",
+            "Everything runs on the phone: jobs + live output, file manager " +
+                "with open/share, all through the local bridge (TRMX-P/1).",
             style = MaterialTheme.typography.bodySmall)
     }
 

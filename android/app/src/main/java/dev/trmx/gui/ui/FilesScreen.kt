@@ -1,18 +1,23 @@
 package dev.trmx.gui.ui
 
 /*
- * File browser (Phase 7): navigate the Termux home per PROTOCOL §6 —
- * list, mkdir, rename, delete (with the recursive+confirm interlock),
- * download into app storage, upload from the document picker.
+ * File browser (Phase 7 + Phase 8): navigate the Termux home per
+ * PROTOCOL §6 — list, mkdir, rename, delete (with the recursive+confirm
+ * interlock), download into app storage, upload from the document picker,
+ * and open/share via the FileProvider (download-then-open, ADR-008).
  * The bridge enforces the path policy; this screen is just a view of it.
  */
 
+import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.Intent
 import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,18 +27,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,11 +51,16 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import dev.trmx.gui.FileBrowserState
 import dev.trmx.gui.model.FileEntry
+import java.io.File
 
 private val TYPE_GLYPH = mapOf(
     "dir" to "📁", "file" to "📄", "symlink" to "🔗", "other" to "•")
+
+/** FileProvider authority (see AndroidManifest + res/xml/file_paths.xml). */
+private const val FILE_PROVIDER = "dev.trmx.gui.fileprovider"
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -65,10 +75,14 @@ fun FilesScreen(
     onDelete: (FileEntry) -> Unit,
     onDownload: (FileEntry) -> Unit,
     onUpload: (android.net.Uri, String) -> Unit,
+    onOpenFile: (FileEntry) -> Unit,
+    onShareFile: (FileEntry) -> Unit,
+    onAfterOpen: (String?) -> Unit,
 ) {
     var newDirDialog by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<FileEntry?>(null) }
     var deleteTarget by remember { mutableStateOf<FileEntry?>(null) }
+    var actionsTarget by remember { mutableStateOf<FileEntry?>(null) }
 
     val context = LocalContext.current
     val picker = rememberLauncherForActivityResult(
@@ -76,6 +90,37 @@ fun FilesScreen(
         if (uri != null) {
             val name = queryDisplayName(context, uri) ?: "uploaded-file"
             onUpload(uri, name)
+        }
+    }
+
+    // A staged open/share (ADR-008): fire the intent once, then clear the
+    // slot. Failure to resolve a viewer is reported honestly, not swallowed.
+    val pending = state.pendingOpen
+    LaunchedEffect(pending) {
+        if (pending == null) return@LaunchedEffect
+        try {
+            val uri = FileProvider.getUriForFile(
+                context, FILE_PROVIDER, File(pending.path))
+            val intent = if (pending.share) {
+                Intent(Intent.ACTION_SEND).apply {
+                    type = pending.mime
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    clipData = ClipData.newRawUri(File(pending.path).name, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            } else {
+                Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, pending.mime)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            }
+            context.startActivity(intent)
+            onAfterOpen(null)
+        } catch (e: ActivityNotFoundException) {
+            onAfterOpen("no app can open “${File(pending.path).name}” " +
+                "(${pending.mime}) — try Share instead")
+        } catch (e: SecurityException) {
+            onAfterOpen("cannot open: ${e.message}")
         }
     }
 
@@ -105,6 +150,9 @@ fun FilesScreen(
                         picker.launch(arrayOf("*/*"))
                     }) { Text("↑ upload") }
                 }
+                Text("tap a folder to open it · long-press a row for actions",
+                     style = MaterialTheme.typography.bodySmall,
+                     color = MaterialTheme.colorScheme.secondary)
                 state.notice?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall,
                          color = MaterialTheme.colorScheme.primary)
@@ -116,10 +164,50 @@ fun FilesScreen(
             }
         }
 
-        if (state.loading) {
-            Text("loading…")
-        } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+        state.transfer?.let { t ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp),
+                       verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("${t.label} ${t.name}…", style = MaterialTheme.typography.bodyMedium)
+                    val total = t.total
+                    if (total != null && total > 0) {
+                        LinearProgressIndicator(
+                            progress = { (t.bytes.toDouble() / total).toFloat() },
+                            modifier = Modifier.fillMaxWidth())
+                        Text("${Formatter.formatShortFileSize(context, t.bytes)} / " +
+                                 Formatter.formatShortFileSize(context, total),
+                             fontFamily = FontFamily.Monospace, fontSize = 11.sp,
+                             color = MaterialTheme.colorScheme.secondary)
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        if (t.bytes > 0) {
+                            Text(Formatter.formatShortFileSize(context, t.bytes),
+                                 fontFamily = FontFamily.Monospace, fontSize = 11.sp,
+                                 color = MaterialTheme.colorScheme.secondary)
+                        }
+                    }
+                }
+            }
+        }
+
+        when {
+            state.loading -> Row(verticalAlignment = Alignment.CenterVertically,
+                                 horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                CircularProgressIndicator(strokeWidth = 3.dp)
+                Text("loading…")
+            }
+            state.entries.isEmpty() && state.error != null -> Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(14.dp),
+                       verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(state.error, color = MaterialTheme.colorScheme.error)
+                    OutlinedButton(onClick = onRefresh) { Text("retry") }
+                }
+            }
+            state.entries.isEmpty() -> Box(modifier = Modifier.fillMaxSize(),
+                                           contentAlignment = Alignment.Center) {
+                Text("This folder is empty.", color = MaterialTheme.colorScheme.secondary)
+            }
+            else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
                 items(state.entries, key = { it.name }) { entry ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -128,7 +216,7 @@ fun FilesScreen(
                             .combinedClickable(
                                 onClick = { if (entry.type == "dir") onOpenPath(
                                     state.path.trimEnd('/') + "/" + entry.name) },
-                                onLongClick = { renameTarget = entry },
+                                onLongClick = { actionsTarget = entry },
                             )
                             .padding(vertical = 8.dp),
                     ) {
@@ -152,9 +240,7 @@ fun FilesScreen(
                                      color = Color(0xFF80CBC4))
                             }
                         }
-                        if (entry.type == "file") {
-                            TextButton(onClick = { onDownload(entry) }) { Text("save") }
-                        }
+                        Text("⋮", color = MaterialTheme.colorScheme.secondary)
                     }
                 }
             }
@@ -177,6 +263,38 @@ fun FilesScreen(
                 }) { Text("create") }
             },
             dismissButton = { TextButton(onClick = { newDirDialog = false }) { Text("cancel") } },
+        )
+    }
+
+    actionsTarget?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { actionsTarget = null },
+            title = { Text(entry.name) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (entry.type != "dir") {
+                        TextButton(onClick = { onOpenFile(entry); actionsTarget = null }) {
+                            Text("Open (via viewer app)")
+                        }
+                        TextButton(onClick = { onShareFile(entry); actionsTarget = null }) {
+                            Text("Share…")
+                        }
+                        TextButton(onClick = { onDownload(entry); actionsTarget = null }) {
+                            Text("Save to app documents")
+                        }
+                    }
+                    TextButton(onClick = { renameTarget = entry; actionsTarget = null }) {
+                        Text("Rename…")
+                    }
+                    TextButton(onClick = { deleteTarget = entry; actionsTarget = null }) {
+                        Text("Delete…", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { actionsTarget = null }) { Text("close") }
+            },
         )
     }
 

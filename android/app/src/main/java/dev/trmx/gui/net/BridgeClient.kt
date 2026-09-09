@@ -33,6 +33,7 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okio.BufferedSink
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -104,8 +105,16 @@ class BridgeClient(
             jsonFormat.decodeFromString(FileOpResponse.serializer(), body)
         }
 
-    /** Streamed download to [dest]; Content-Length verified when present. */
-    suspend fun downloadFile(path: String, dest: File): BridgeResult<Long> =
+    /**
+     * Streamed download to [dest]; Content-Length verified when present.
+     * [onProgress] receives (bytesCopied, totalOrNull) on the IO thread —
+     * callers throttle before touching UI state.
+     */
+    suspend fun downloadFile(
+        path: String,
+        dest: File,
+        onProgress: ((bytes: Long, total: Long?) -> Unit)? = null,
+    ): BridgeResult<Long> =
         withContext(Dispatchers.IO) {
             val request = Request.Builder()
                 .url(baseUrl + "/v1/files/content?path=" + enc(path))
@@ -129,7 +138,14 @@ class BridgeClient(
                         var copied = 0L
                         FileOutputStream(dest).use { out ->
                             body.byteStream().use { input ->
-                                copied = input.copyTo(out, 64 * 1024)
+                                val buf = ByteArray(64 * 1024)
+                                while (true) {
+                                    val n = input.read(buf)
+                                    if (n <= 0) break
+                                    out.write(buf, 0, n)
+                                    copied += n
+                                    onProgress?.invoke(copied, expected)
+                                }
                             }
                         }
                         if (expected != null && copied != expected) {
@@ -152,11 +168,18 @@ class BridgeClient(
      * Streaming upload from [src] (PROTOCOL §6.5): temp-then-rename on the
      * bridge side, so a partial upload never leaves a partial file.
      * X-TRMX-Sha256 is computed over the file and verified by the bridge.
+     * [onProgress] receives bytesSent (content length is known up front).
      */
-    suspend fun uploadFile(path: String, src: File, overwrite: Boolean = false): BridgeResult<Unit> =
+    suspend fun uploadFile(
+        path: String,
+        src: File,
+        overwrite: Boolean = false,
+        onProgress: ((bytes: Long) -> Unit)? = null,
+    ): BridgeResult<Unit> =
         withContext(Dispatchers.IO) {
             val sha = sha256Of(src)
-            val body = src.asRequestBody(OCTET_STREAM)
+            val body = if (onProgress != null) ProgressRequestBody(OCTET_STREAM, src, onProgress)
+                       else src.asRequestBody(OCTET_STREAM)
             callRaw("PUT",
                     "/v1/files/content?path=" + enc(path) +
                         "&overwrite=${if (overwrite) "1" else "0"}",
@@ -252,6 +275,33 @@ class BridgeClient(
             ignoreUnknownKeys = true
             isLenient = false
             encodeDefaults = true   // wire shape: optional fields are sent explicitly (env: null, …)
+        }
+    }
+}
+
+/**
+ * RequestBody that streams [file] in 64 KiB chunks and reports bytes as
+ * they hit the wire (callers throttle before touching UI state).
+ */
+private class ProgressRequestBody(
+    private val mime: MediaType?,
+    private val file: File,
+    private val onProgress: (Long) -> Unit,
+) : RequestBody() {
+    override fun contentType() = mime
+    override fun contentLength() = file.length()
+
+    override fun writeTo(sink: BufferedSink) {
+        var sent = 0L
+        val buf = ByteArray(64 * 1024)
+        FileInputStream(file).use { input ->
+            while (true) {
+                val n = input.read(buf)
+                if (n <= 0) break
+                sink.write(buf, 0, n)
+                sent += n
+                onProgress(sent)
+            }
         }
     }
 }
