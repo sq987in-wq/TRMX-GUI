@@ -69,6 +69,12 @@ gate, since the dev sandbox has no JDK/Android SDK.
 
 - **file browser**: navigate the Termux home (list/stat per PROTOCOL §6),
   new folder, rename, delete (recursive+confirm interlock surfaced in the
-  UI), download to app storage, upload via the document picker
+  UI), download to app storage, upload via the document picker, open/share
+  via FileProvider (Phase 8)
+- **toolbox** (Phase 9): live tool cards from the bridge registry
+  (PROTOCOL §7), one-tap pkg installs with auto-rescan, schema-driven
+  dynamic forms (path args pick in the Files browser), live progress bars,
+  recipes + home-screen shortcuts, and linear `$PREV_FILE` chains — all
+  orchestrated app-side over the existing wire
 
-Tools: Phases 8–9.
+Tools: `./gradlew :app:testDebugUnitTest` (JVM suite, run in CI).

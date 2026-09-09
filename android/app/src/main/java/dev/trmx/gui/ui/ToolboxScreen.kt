@@ -1,0 +1,207 @@
+package dev.trmx.gui.ui
+
+/*
+ * Phase 9 Toolbox: live tool cards from the bridge registry (PROTOCOL §7),
+ * one-tap pkg install for missing binaries, recipes (saved forms) with
+ * share/import, and the entry point to chains.
+ */
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import dev.trmx.gui.model.ToolStatus
+import dev.trmx.gui.store.Recipe
+
+private val TIER_COLORS = mapOf(
+    "safe" to Color(0xFF4CAF50),
+    "confirm" to Color(0xFFFFC107),
+    "destructive" to Color(0xFFF44336),
+)
+
+@Composable
+fun ToolboxScreen(
+    state: dev.trmx.gui.ToolsState,
+    recipes: List<Recipe>,
+    onBack: () -> Unit,
+    onRefresh: () -> Unit,
+    onOpenTool: (String) -> Unit,
+    onInstall: (ToolStatus) -> Unit,
+    onOpenRecipe: (String) -> Unit,
+    onDeleteRecipe: (String) -> Unit,
+    onShareRecipe: (Recipe) -> Unit,
+    onImportRecipe: (android.net.Uri) -> Unit,
+    onOpenChains: () -> Unit,
+) {
+    val context = LocalContext.current
+    val importPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) onImportRecipe(uri)
+    }
+    var confirmInstall by remember { mutableStateOf<ToolStatus?>(null) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = onBack) { Text("← Dashboard") }
+            Spacer(Modifier.width(10.dp))
+            Text("Toolbox", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.weight(1f))
+            if (state.loading) CircularProgressIndicator(strokeWidth = 3.dp)
+            Spacer(Modifier.width(8.dp))
+            OutlinedButton(onClick = onRefresh) { Text("scan ⟳") }
+        }
+
+        state.notice?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall,
+                 color = MaterialTheme.colorScheme.primary)
+        }
+        state.error?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall,
+                 color = MaterialTheme.colorScheme.error)
+        }
+        if (state.schemaErrors.isNotEmpty()) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("Some user schemas in ~/.trmx/tools/ were skipped:",
+                         fontWeight = FontWeight.Bold,
+                         style = MaterialTheme.typography.bodySmall)
+                    state.schemaErrors.take(3).forEach {
+                        Text(it, style = MaterialTheme.typography.bodySmall,
+                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                             fontSize = 10.sp)
+                    }
+                }
+            }
+        }
+
+        if (!state.loading && state.tools.isEmpty() && state.error == null) {
+            Text("No tools — tap “scan ⟳”.", color = MaterialTheme.colorScheme.secondary)
+        }
+
+        state.tools.forEach { t -> ToolCard(t, onOpenTool) { confirmInstall = t } }
+
+        // ---- recipes -----------------------------------------------------
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp),
+                   verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Recipes (${recipes.size})", fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.weight(1f))
+                    OutlinedButton(onClick = {
+                        importPicker.launch(arrayOf("application/json", "*/*"))
+                    }) { Text("import") }
+                }
+                if (recipes.isEmpty()) {
+                    Text("Save a filled tool form as a recipe — it becomes a " +
+                         "one-tap shortcut on the home screen.",
+                         style = MaterialTheme.typography.bodySmall,
+                         color = MaterialTheme.colorScheme.secondary)
+                }
+                recipes.forEach { r ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier
+                            .weight(1f)
+                            .clickable { onOpenRecipe(r.id) }) {
+                            Text(r.title, style = MaterialTheme.typography.bodyLarge)
+                            Text(r.toolId, style = MaterialTheme.typography.bodySmall,
+                                 color = MaterialTheme.colorScheme.secondary)
+                        }
+                        TextButton(onClick = { onShareRecipe(r) }) { Text("share") }
+                        TextButton(onClick = { onDeleteRecipe(r.id) }) {
+                            Text("delete", color = MaterialTheme.colorScheme.error) }
+                    }
+                }
+            }
+        }
+
+        Button(onClick = onOpenChains, modifier = Modifier.fillMaxWidth()) {
+            Text("⛓ Chains — visual pipelines")
+        }
+    }
+
+    confirmInstall?.let { t ->
+        AlertDialog(
+            onDismissRequest = { confirmInstall = null },
+            title = { Text("Install ${t.schema.pkg ?: t.schema.binary}?") },
+            text = {
+                Text("Runs `pkg install -y ${t.schema.pkg ?: t.schema.binary}` as a " +
+                     "normal job with a live console. The toolbox rescans " +
+                     "automatically when it finishes.")
+            },
+            confirmButton = {
+                TextButton(onClick = { onInstall(t); confirmInstall = null }) {
+                    Text("install") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmInstall = null }) { Text("cancel") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun ToolCard(t: ToolStatus, onOpenTool: (String) -> Unit, onInstall: () -> Unit) {
+    Card(modifier = Modifier
+        .fillMaxWidth()
+        .clickable(enabled = t.installed) { onOpenTool(t.schema.id) }) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(t.schema.name, fontWeight = FontWeight.Bold,
+                     modifier = Modifier.weight(1f))
+                Text(t.schema.risk_tier.uppercase(),
+                     color = TIER_COLORS[t.schema.risk_tier] ?: Color.Gray,
+                     fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+            Text(t.schema.description, style = MaterialTheme.typography.bodySmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (t.installed) {
+                    Text("✓ ${t.version ?: "installed"}",
+                         color = Color(0xFF4CAF50),
+                         style = MaterialTheme.typography.bodySmall)
+                } else {
+                    Text("✗ not installed",
+                         color = MaterialTheme.colorScheme.error,
+                         style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.weight(1f))
+                    OutlinedButton(onClick = onInstall) { Text("install") }
+                }
+            }
+        }
+    }
+}

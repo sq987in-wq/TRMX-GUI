@@ -6,6 +6,47 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Added — Phase 9: Tool Registry, dynamic forms, recipes, shortcuts & chains (2026-09-09)
+- **Bridge v0.4.0 — PROTOCOL §7 implemented** (frozen since Phase 1):
+  `GET /v1/tools[/{id}]` + `POST /v1/tools/refresh` (probe via
+  `command -v` + `--version`), bundled schemas yt-dlp/ffmpeg/aria2c, user
+  schemas from `~/.trmx/tools/` override bundled by id (malformed skipped,
+  reported in `features.tool_schema_errors`), `type:"tool"` submits with
+  bridge-side argv synthesis + full ARG_INVALID/TOOL_UNKNOWN/PATH_* validation,
+  **live progress** via each schema's `progress_regex` (percent →
+  `progress_pct`/`progress_detail` → `job.updated`), risk tier audit-logged.
+  Two real bugs caught by the new suite: bool-false args emitted tokens, and
+  the common argv validator clobbered synthesized argv.
+- **App Toolbox**: live tool cards (installed/version/tier), scan ⟳,
+  user-schema errors surfaced, **self-healing one-tap installs**
+  (`pkg install -y` as a normal job with live console; auto-rescan via
+  `/v1/events` when it finishes).
+- **Dynamic forms (FormEngine + ToolFormScreen)**: schema-driven controls per
+  type (enum chips, bool switch, numeric fields, URL field, **path args
+  picked in the Files browser** — file vs folder per `path_kind`), example
+  prefill chips, live argv preview strip, risk-tier confirmation.
+- **Mission Control**: tool jobs show schema-parsed live progress bars on the
+  dashboard (the % comes from real tool output, parsed by the bridge).
+- **Recipes + home-screen shortcuts** (ADR-010): saved forms as JSON in
+  `filesDir/recipes.json`, shared/imported via the Phase 8 staging mechanism
+  (imports always get a fresh id), newest 4 as one-tap dynamic shortcuts
+  (singleTask MainActivity, recipe deep-link through the wizard gate).
+- **Chains** (ADR-010): linear visual pipelines with `$PREV_FILE` refs
+  (chainable only from tools with an explicit output arg — no filename
+  guessing), app-side orchestration over the existing wire (submit → poll →
+  next), pause/resume on bridge loss, stop-orchestrating that never hides a
+  running job, persisted in `chains.json`.
+- Events subscription moved to app-root scope (feeds chains, install
+  watcher, and dashboard updates on every screen).
+- New fixture `fixtures/v1/tools.list.response.json` documents the frozen
+  §7.1 list shape (shape unchanged; added with ADR-009 per the fixtures
+  rule). Both suites validate against it.
+- Tests: termux `test_tools.py` (14 — synthesis table, probing, progress
+  end-to-end with fake binaries, merge precedence, tier audit) → suite
+  63/63; app `ToolsWireTest` (4) + `FormEngineTest` (4) + `ChainPlannerTest`
+  (3) + `RecipeStoreTest` (4).
+
+
 ### Added — Phase 8: polish, UX & FileProvider (2026-09-08, app-only)
 - **Open/Share (ADR-008, download-then-open)**: long-press action sheet with
   Open (ACTION_VIEW) and Share (ACTION_SEND) — the entry streams from the

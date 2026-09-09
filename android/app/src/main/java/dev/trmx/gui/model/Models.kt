@@ -12,6 +12,7 @@ package dev.trmx.gui.model
  */
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 
 @Serializable
 data class SystemInfo(
@@ -56,6 +57,7 @@ data class Features(
     val termux_api: Boolean = false,
     val runit: Boolean = false,
     val scheduler: Boolean = false,
+    val tool_schema_errors: List<String> = emptyList(),   // §7.2 (bridge v0.4.0+)
 )
 
 @Serializable
@@ -170,6 +172,71 @@ data class JobSummary(
 data class JobsPage(
     val jobs: List<JobSummary> = emptyList(),
     val next_cursor: String? = null,
+)
+
+// ---- Tool Registry (PROTOCOL §7, bridge v0.4.0) --------------------------
+
+/** One form field spec (§7.2). `default` is a raw JsonElement (string/bool/int). */
+@Serializable
+data class ToolArg(
+    val name: String = "",
+    val label: String = "",
+    val type: String = "string",      // string|int|float|bool|enum|path|url
+    val required: Boolean = false,
+    val help: String? = null,
+    val enum: List<String>? = null,
+    val default: JsonElement? = null,
+    val pattern: String? = null,
+    val argv: List<String>? = null,
+    val min: Double? = null,
+    val max: Double? = null,
+    val path_kind: String? = null,    // file|dir
+)
+
+@Serializable
+data class ToolExample(
+    val label: String = "",
+    val args: Map<String, JsonElement> = emptyMap(),
+)
+
+@Serializable
+data class ToolSchema(
+    val id: String = "",
+    val name: String = "",
+    val description: String = "",
+    val binary: String = "",
+    val pkg: String? = null,          // Termux package hint (app-side install)
+    val risk_tier: String = "safe",   // safe|confirm|destructive
+    val progress_regex: String? = null,
+    val fixed_argv: List<String> = emptyList(),
+    val args: List<ToolArg> = emptyList(),
+    val examples: List<ToolExample> = emptyList(),
+)
+
+/** GET /v1/tools element: ToolStatus (§7.1). */
+@Serializable
+data class ToolStatus(
+    val schema: ToolSchema,
+    val installed: Boolean = false,
+    val version: String? = null,
+)
+
+@Serializable
+data class ToolsResponse(
+    val tools: List<ToolStatus> = emptyList(),
+)
+
+/** POST /v1/jobs with type "tool" (§7.2) — argv is synthesized bridge-side. */
+@Serializable
+data class ToolSubmitRequest(
+    val name: String,
+    val type: String = "tool",
+    val tool: String,
+    val args: Map<String, JsonElement>,
+    val cwd: String? = null,
+    val env: Map<String, String>? = null,
+    val timeout_s: Long? = null,
+    val idempotency_key: String? = null,
 )
 
 /** TRMX-P/1 error envelope: {"error":{code,message,field,details}} */

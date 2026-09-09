@@ -63,6 +63,7 @@ fun DashboardScreen(
     onSubmitTimeout: (String) -> Unit,
     onSubmitJob: () -> Unit,
     onOpenFiles: () -> Unit,
+    onOpenTools: () -> Unit = {},
 ) {
     var showSubmit by remember { mutableStateOf(false) }
 
@@ -105,6 +106,7 @@ fun DashboardScreen(
                 Text(if (state.refreshing) "Refreshing…" else "Refresh")
             }
             Button(onClick = onOpenFiles) { Text("Files") }
+            Button(onClick = onOpenTools) { Text("Tools") }
             OutlinedButton(onClick = onRerunWizard) { Text("Re-run setup") }
             OutlinedButton(onClick = onStopBridge) { Text("Stop bridge") }
         }
@@ -200,8 +202,20 @@ private fun JobsCard(jobs: List<JobSummary>, onJobClick: (String) -> Unit) {
                         Text(job.name.ifEmpty { job.argv?.joinToString(" ").orEmpty() },
                              style = MaterialTheme.typography.bodyMedium)
                     }
-                    job.progress_detail?.let {
-                        Text("  $it", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                    if (job.progress_pct != null) {
+                        androidx.compose.foundation.layout.Column {
+                            androidx.compose.material3.LinearProgressIndicator(
+                                progress = { (job.progress_pct / 100.0).toFloat() },
+                                modifier = Modifier.fillMaxWidth())
+                            Text("  ${job.progress_pct}% " +
+                                     (job.progress_detail ?: ""),
+                                 fontFamily = FontFamily.Monospace, fontSize = 11.sp,
+                                 color = MaterialTheme.colorScheme.secondary)
+                        }
+                    } else {
+                        job.progress_detail?.let {
+                            Text("  $it", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                        }
                     }
                 }
             }

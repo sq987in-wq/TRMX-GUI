@@ -23,6 +23,9 @@ import dev.trmx.gui.model.SubmitOutcome
 import dev.trmx.gui.model.SubmitRequest
 import dev.trmx.gui.model.SubmitResponse
 import dev.trmx.gui.model.SystemInfo
+import dev.trmx.gui.model.ToolStatus
+import dev.trmx.gui.model.ToolSubmitRequest
+import dev.trmx.gui.model.ToolsResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -185,6 +188,34 @@ class BridgeClient(
                     "/v1/files/content?path=" + enc(path) +
                         "&overwrite=${if (overwrite) "1" else "0"}",
                     body, mapOf("X-TRMX-Sha256" to sha)) { _, _ -> }
+        }
+
+    // ---- tools (PROTOCOL §7, bridge v0.4.0) ------------------------------
+
+    suspend fun listTools(): BridgeResult<ToolsResponse> =
+        get("/v1/tools") { body, _ ->
+            jsonFormat.decodeFromString(ToolsResponse.serializer(), body)
+        }
+
+    /** Re-probe availability on the phone; returns the fresh list. */
+    suspend fun refreshTools(): BridgeResult<ToolsResponse> =
+        call("POST", "/v1/tools/refresh",
+             "{}".toRequestBody(JSON), extraHeaders = null) { body, _ ->
+            jsonFormat.decodeFromString(ToolsResponse.serializer(), body)
+        }
+
+    /** Single tool by id (§7.1) — used for cold-start recipe shortcuts. */
+    suspend fun getTool(id: String): BridgeResult<ToolStatus> =
+        get("/v1/tools/${enc(id)}") { body, _ ->
+            jsonFormat.decodeFromString(ToolStatus.serializer(), body)
+        }
+
+    /** Submit a tool job — argv synthesis + validation happen bridge-side. */
+    suspend fun submitToolJob(request: ToolSubmitRequest): BridgeResult<SubmitOutcome> =
+        call("POST", "/v1/jobs",
+             jsonFormat.encodeToString(ToolSubmitRequest.serializer(), request).toRequestBody(JSON)) { body, headers ->
+            val resp = jsonFormat.decodeFromString(SubmitResponse.serializer(), body)
+            SubmitOutcome(resp, "true".equals(headers["Idempotent-Replay"], ignoreCase = true))
         }
 
     // ---- internals -----------------------------------------------------

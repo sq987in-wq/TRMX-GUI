@@ -1,0 +1,15 @@
+{
+  "tools": [
+    { "schema": { "id": "yt-dlp", "name": "Video Downloader (yt-dlp)",
+                  "description": "Download videos from thousands of sites.",
+                  "binary": "yt-dlp", "risk_tier": "safe",
+                  "fixed_argv": ["--newline"],
+                  "args": [ { "name": "url", "label": "Video URL", "type": "url", "required": true } ],
+                  "examples": [] },
+      "installed": true, "version": "yt-dlp 2026.01.01" },
+    { "schema": { "id": "ffmpeg", "name": "Convert / Transcode (ffmpeg)",
+                  "description": "Re-encode video and audio files.",
+                  "binary": "ffmpeg", "risk_tier": "confirm", "args": [] },
+      "installed": false, "version": null }
+  ]
+}

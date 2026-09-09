@@ -8,9 +8,6 @@ package dev.trmx.gui.ui
  * The bridge enforces the path policy; this screen is just a view of it.
  */
 
-import android.content.ActivityNotFoundException
-import android.content.ClipData
-import android.content.Intent
 import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -38,7 +35,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,16 +47,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.FileProvider
 import dev.trmx.gui.FileBrowserState
 import dev.trmx.gui.model.FileEntry
-import java.io.File
 
 private val TYPE_GLYPH = mapOf(
     "dir" to "📁", "file" to "📄", "symlink" to "🔗", "other" to "•")
-
-/** FileProvider authority (see AndroidManifest + res/xml/file_paths.xml). */
-private const val FILE_PROVIDER = "dev.trmx.gui.fileprovider"
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -77,7 +68,10 @@ fun FilesScreen(
     onUpload: (android.net.Uri, String) -> Unit,
     onOpenFile: (FileEntry) -> Unit,
     onShareFile: (FileEntry) -> Unit,
-    onAfterOpen: (String?) -> Unit,
+    /** Non-null = picker mode: tap a file (true) or use-the-folder (false). */
+    pickFile: Boolean? = null,
+    onPicked: (String) -> Unit = {},
+    onCancelPick: () -> Unit = {},
 ) {
     var newDirDialog by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<FileEntry?>(null) }
@@ -93,37 +87,6 @@ fun FilesScreen(
         }
     }
 
-    // A staged open/share (ADR-008): fire the intent once, then clear the
-    // slot. Failure to resolve a viewer is reported honestly, not swallowed.
-    val pending = state.pendingOpen
-    LaunchedEffect(pending) {
-        if (pending == null) return@LaunchedEffect
-        try {
-            val uri = FileProvider.getUriForFile(
-                context, FILE_PROVIDER, File(pending.path))
-            val intent = if (pending.share) {
-                Intent(Intent.ACTION_SEND).apply {
-                    type = pending.mime
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    clipData = ClipData.newRawUri(File(pending.path).name, uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-            } else {
-                Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, pending.mime)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-            }
-            context.startActivity(intent)
-            onAfterOpen(null)
-        } catch (e: ActivityNotFoundException) {
-            onAfterOpen("no app can open “${File(pending.path).name}” " +
-                "(${pending.mime}) — try Share instead")
-        } catch (e: SecurityException) {
-            onAfterOpen("cannot open: ${e.message}")
-        }
-    }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -131,9 +94,17 @@ fun FilesScreen(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = onBack) { Text("← Dashboard") }
+            OutlinedButton(onClick = { if (pickFile != null) onCancelPick() else onBack() }) {
+                Text(if (pickFile != null) "← cancel" else "← Dashboard")
+            }
             Spacer(Modifier.width(10.dp))
-            Text("Files", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text(
+                when (pickFile) {
+                    true -> "Pick a file"
+                    false -> "Pick a folder"
+                    else -> "Files"
+                },
+                fontSize = 24.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
             if (state.opPending) CircularProgressIndicator(strokeWidth = 3.dp)
         }
@@ -142,17 +113,26 @@ fun FilesScreen(
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(state.path, fontFamily = FontFamily.Monospace,
                      style = MaterialTheme.typography.bodyLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OutlinedButton(onClick = onUp, enabled = state.path != "~") { Text("↑ up") }
-                    OutlinedButton(onClick = onRefresh) { Text("refresh") }
-                    Button(onClick = { newDirDialog = true }) { Text("+ folder") }
-                    Button(onClick = {
-                        picker.launch(arrayOf("*/*"))
-                    }) { Text("↑ upload") }
+                if (pickFile == null) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(onClick = onUp, enabled = state.path != "~") { Text("↑ up") }
+                        OutlinedButton(onClick = onRefresh) { Text("refresh") }
+                        Button(onClick = { newDirDialog = true }) { Text("+ folder") }
+                        Button(onClick = {
+                            picker.launch(arrayOf("*/*"))
+                        }) { Text("↑ upload") }
+                    }
+                } else if (pickFile == false) {
+                    Button(onClick = { onPicked(state.path) }) { Text("use this folder ✓") }
                 }
-                Text("tap a folder to open it · long-press a row for actions",
-                     style = MaterialTheme.typography.bodySmall,
-                     color = MaterialTheme.colorScheme.secondary)
+                Text(
+                    when (pickFile) {
+                        true -> "navigate to the file, then tap it"
+                        false -> "navigate into the folder, then “use this folder”"
+                        else -> "tap a folder to open it · long-press a row for actions"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary)
                 state.notice?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall,
                          color = MaterialTheme.colorScheme.primary)
@@ -214,9 +194,14 @@ fun FilesScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .combinedClickable(
-                                onClick = { if (entry.type == "dir") onOpenPath(
-                                    state.path.trimEnd('/') + "/" + entry.name) },
-                                onLongClick = { actionsTarget = entry },
+                                onClick = {
+                                    if (entry.type == "dir") {
+                                        onOpenPath(state.path.trimEnd('/') + "/" + entry.name)
+                                    } else if (pickFile == true) {
+                                        onPicked(state.path.trimEnd('/') + "/" + entry.name)
+                                    }
+                                },
+                                onLongClick = { if (pickFile == null) actionsTarget = entry },
                             )
                             .padding(vertical = 8.dp),
                     ) {

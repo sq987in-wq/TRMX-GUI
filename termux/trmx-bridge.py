@@ -50,11 +50,12 @@ import sqlite3
 import stat as stat_mod
 import sys
 import time
+import urllib.parse
 from collections import deque
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 PROTOCOL_VERSIONS = [1]
 
 LOG = logging.getLogger("trmx-bridge")
@@ -465,6 +466,329 @@ class Policy:
         return expanded
 
 
+
+# --------------------------------------------------------------------------- tool registry
+
+
+BUNDLED_TOOL_SCHEMAS: list[dict] = [
+    # yt-dlp: VERBATIM the frozen normative fixture (fixtures/v1/tool.schema.yt-dlp.json)
+    {
+        "id": "yt-dlp",
+        "name": "Video Downloader (yt-dlp)",
+        "description": "Download videos from thousands of sites.",
+        "binary": "yt-dlp",
+        "pkg": "yt-dlp",          # Termux package hint (app-side install button)
+        "risk_tier": "safe",
+        "progress_regex": r"\[download\]\s+(\d{1,3}(?:\.\d+)?)%",
+        "fixed_argv": ["--newline"],
+        "args": [
+            {"name": "url", "label": "Video URL", "type": "url", "required": True,
+             "help": "The page or direct video URL."},
+            {"name": "format", "label": "Quality", "type": "enum", "required": False,
+             "enum": ["mp4", "mkv", "best"], "default": "mp4", "argv": ["-f", "{value}"]},
+            {"name": "audio", "label": "Audio only", "type": "bool", "default": False, "argv": ["-x"]},
+            {"name": "rate", "label": "Rate limit", "type": "string", "required": False,
+             "pattern": r"^\d+[KM]$", "argv": ["-r", "{value}"]},
+            {"name": "outdir", "label": "Output folder", "type": "path", "path_kind": "dir",
+             "default": "~/downloads", "argv": ["-P", "{value}"]},
+        ],
+        "examples": [
+            {"label": "MP4, best quality",
+             "args": {"url": "https://example.com/watch?v=xyz", "format": "mp4"}},
+        ],
+    },
+    {
+        "id": "ffmpeg",
+        "name": "Convert / Transcode (ffmpeg)",
+        "description": "Re-encode video and audio files.",
+        "binary": "ffmpeg",
+        "pkg": "ffmpeg",
+        "risk_tier": "confirm",
+        "progress_regex": r"time=(\d{2}:\d{2}:\d{2}\.\d{2})",
+        "fixed_argv": ["-hide_banner", "-nostdin"],
+        "args": [
+            {"name": "input", "label": "Input file", "type": "path", "path_kind": "file",
+             "required": True, "help": "The file to convert."},
+            {"name": "output", "label": "Output file", "type": "path", "path_kind": "file",
+             "required": True, "help": "Where to write the result."},
+            {"name": "preset", "label": "Speed preset", "type": "enum", "required": False,
+             "enum": ["veryfast", "fast", "medium", "slow"], "default": "medium",
+             "argv": ["-preset", "{value}"]},
+            {"name": "crf", "label": "Quality (CRF)", "type": "int", "required": False,
+             "min": 0, "max": 51, "default": 23, "argv": ["-crf", "{value}"]},
+            {"name": "scale", "label": "Scale to (e.g. 1280x720)", "type": "string",
+             "required": False, "pattern": r"^\d{2,5}x\d{2,5}$", "argv": ["-vf", "scale={value}"]},
+            {"name": "audio_only", "label": "Strip video (audio only)", "type": "bool",
+             "default": False, "argv": ["-vn"]},
+        ],
+        "examples": [
+            {"label": "Compress to 720p",
+             "args": {"input": "~/downloads/in.mp4", "output": "~/downloads/out.mp4",
+                      "scale": "1280x720"}},
+        ],
+    },
+    {
+        "id": "aria2c",
+        "name": "Fast Downloader (aria2c)",
+        "description": "Multi-connection downloads over HTTP(S)/FTP.",
+        "binary": "aria2c",
+        "pkg": "aria2",
+        "risk_tier": "safe",
+        "progress_regex": r"\((\d{1,3})%\)",
+        "fixed_argv": [],
+        "args": [
+            {"name": "url", "label": "Download URL", "type": "url", "required": True},
+            {"name": "outdir", "label": "Output folder", "type": "path", "path_kind": "dir",
+             "default": "~/downloads", "argv": ["-d", "{value}"]},
+            {"name": "connections", "label": "Connections per server", "type": "int",
+             "required": False, "min": 1, "max": 16, "default": 4,
+             "argv": ["-x", "{value}"]},
+            {"name": "filename", "label": "Save as (optional)", "type": "string",
+             "required": False, "pattern": r"^[^/\\]+$", "argv": ["-o", "{value}"]},
+        ],
+        "examples": [
+            {"label": "Quick fetch",
+             "args": {"url": "https://example.com/file.zip"}},
+        ],
+    },
+]
+
+TOOL_ARG_TYPES = ("string", "int", "float", "bool", "enum", "path", "url")
+
+
+class ToolRegistry:
+    """Bundled + user tool schemas (PROTOCOL §7.2) and availability probing.
+
+    Merge precedence: user schemas (~/.trmx/tools/*.json, alphabetical)
+    override bundled schemas with the same id. Malformed user schemas are
+    skipped and reported via system/info.features.tool_schema_errors;
+    a malformed BUNDLED schema is our bug and fails loud.
+    """
+
+    def __init__(self, home: Path, policy: Policy):
+        self.home = home
+        self.policy = policy
+        self.schema_errors: list[str] = []
+        self.schemas: dict[str, dict] = {}
+        self._probe: dict[str, dict] = {}
+        self._load()
+
+    # -- loading ---------------------------------------------------------
+
+    def _load(self) -> None:
+        self.schema_errors = []
+        merged: dict[str, dict] = {}
+        sources: list[tuple[str, dict]] = [("bundled", s) for s in BUNDLED_TOOL_SCHEMAS]
+        udir = self.home / "tools"
+        if udir.is_dir():
+            for p in sorted(udir.glob("*.json")):
+                try:
+                    sources.append(("user:" + p.name, json.loads(p.read_text(encoding="utf-8"))))
+                except Exception as e:  # noqa: BLE001
+                    self.schema_errors.append(f"user:{p.name}: not valid JSON: {e}")
+        for origin, schema in sources:
+            try:
+                self._validate_schema(schema)
+            except Exception as e:  # noqa: BLE001
+                if origin == "bundled":
+                    raise
+                self.schema_errors.append(f"{origin}: {e}")
+                continue
+            merged[schema["id"]] = schema
+        self.schemas = merged
+
+    @staticmethod
+    def _validate_schema(schema: dict) -> None:
+        if not isinstance(schema, dict):
+            raise ValueError("schema must be a JSON object")
+        tid = schema.get("id")
+        if not isinstance(tid, str) or not tid or "/" in tid:
+            raise ValueError("id must be a non-empty string without '/'")
+        binary = schema.get("binary")
+        if not isinstance(binary, str) or not binary or "/" in binary or binary.startswith("."):
+            raise ValueError("binary must be a bare executable name")
+        if schema.get("risk_tier", "safe") not in ("safe", "confirm", "destructive"):
+            raise ValueError("risk_tier must be safe|confirm|destructive")
+        fixed = schema.get("fixed_argv", [])
+        if not isinstance(fixed, list) or not all(isinstance(x, str) for x in fixed):
+            raise ValueError("fixed_argv must be a list of strings")
+        args = schema.get("args", [])
+        if not isinstance(args, list):
+            raise ValueError("args must be a list")
+        names = set()
+        for a in args:
+            if not isinstance(a, dict) or not isinstance(a.get("name"), str) or not a["name"]:
+                raise ValueError("each arg needs a non-empty name")
+            if a["name"] in names:
+                raise ValueError(f"duplicate arg name '{a['name']}'")
+            names.add(a["name"])
+            t = a.get("type", "string")
+            if t not in TOOL_ARG_TYPES:
+                raise ValueError(f"arg '{a['name']}': bad type '{t}'")
+            tmpl = a.get("argv")
+            if tmpl is not None and (not isinstance(tmpl, list)
+                                     or not all(isinstance(x, str) for x in tmpl)):
+                raise ValueError(f"arg '{a['name']}': argv must be a list of strings")
+            if t == "enum" and not isinstance(a.get("enum"), list) or t == "enum" and not a.get("enum"):
+                raise ValueError(f"arg '{a['name']}': enum needs a non-empty enum list")
+            if t == "bool":
+                if tmpl and any("{value}" in x for x in tmpl):
+                    raise ValueError(f"bool arg '{a['name']}': argv may not contain {{value}}")
+            elif tmpl is not None:
+                if sum(x.count("{value}") for x in tmpl) != 1:
+                    raise ValueError(f"arg '{a['name']}': argv must contain {{value}} exactly once")
+            if a.get("pattern"):
+                try:
+                    re.compile(a["pattern"])
+                except re.error as e:
+                    raise ValueError(f"arg '{a['name']}': bad pattern: {e}") from e
+        if schema.get("progress_regex"):
+            try:
+                re.compile(schema["progress_regex"])
+            except re.error as e:
+                raise ValueError(f"bad progress_regex: {e}") from e
+
+    # -- access ----------------------------------------------------------
+
+    def get(self, tool_id: str) -> dict | None:
+        return self.schemas.get(tool_id)
+
+    def list_status(self) -> list[dict]:
+        return [self._status(t) for t in sorted(self.schemas)]
+
+    def _status(self, tid: str) -> dict:
+        p = self._probe.get(tid, {})
+        return {"schema": self.schemas[tid],
+                "installed": bool(p.get("installed")),
+                "version": p.get("version")}
+
+    async def ensure_probed(self) -> list[dict]:
+        for tid in sorted(self.schemas):
+            if tid not in self._probe:
+                await self._probe_one(tid)
+        return self.list_status()
+
+    async def refresh(self) -> list[dict]:
+        for tid in sorted(self.schemas):
+            await self._probe_one(tid)
+        return self.list_status()
+
+    async def _probe_one(self, tid: str) -> dict:
+        schema = self.schemas[tid]
+        binary = self.policy.resolve_binary(schema["binary"])
+        version = None
+        if binary:
+            version = await self._capture_version(binary)
+        self._probe[tid] = {"installed": binary is not None, "version": version}
+        return self._probe[tid]
+
+    async def _capture_version(self, binary: str) -> str | None:
+        """`<binary> --version`, first line, 10 s cap (PROTOCOL §7.1)."""
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                binary, "--version",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+            try:
+                out, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                return None
+            lines = out.decode("utf-8", "replace").strip().splitlines()
+            return lines[0][:120] if lines else None
+        except Exception:  # noqa: BLE001
+            return None
+
+    # -- argv synthesis (PROTOCOL §7.2 rules, bridge-enforced) ----------
+
+    def synth_argv(self, schema: dict, args) -> list[str]:
+        if args is None:
+            args = {}
+        if not isinstance(args, dict):
+            raise BridgeError(400, "ARG_INVALID", "args must be an object", field="args")
+        known = {a["name"]: a for a in schema.get("args", [])}
+        for k in args:
+            if k not in known:
+                raise BridgeError(400, "ARG_INVALID", f"unknown arg '{k}'", field=k)
+        tokens: list[str] = []
+        for a in schema.get("args", []):
+            name = a["name"]
+            if name not in args:
+                if a.get("required"):
+                    raise BridgeError(400, "ARG_INVALID", f"required arg '{name}' is missing",
+                                      field=name)
+                continue
+            value = self._validate_arg(a, args[name])
+            if a.get("type") == "bool" and value is False:
+                continue                # bool False -> contributes nothing (§7.2)
+            tokens.extend(self._argv_tokens(a, value))
+        return tokens
+
+    def _validate_arg(self, a: dict, value) -> object:
+        name, t = a["name"], a.get("type", "string")
+
+        def bad(msg: str) -> None:
+            raise BridgeError(400, "ARG_INVALID", f"arg '{name}': {msg}", field=name)
+
+        if t == "bool":
+            if not isinstance(value, bool):
+                bad("must be true or false")
+            return value
+        if isinstance(value, bool):
+            bad("must not be a boolean")
+        if t == "int":
+            if not isinstance(value, int):
+                bad("must be an integer")
+            if ("min" in a and value < a["min"]) or ("max" in a and value > a["max"]):
+                bad(f"must be between {a.get('min')} and {a.get('max')}")
+            return value
+        if t == "float":
+            if not isinstance(value, (int, float)):
+                bad("must be a number")
+            v = float(value)
+            if ("min" in a and v < a["min"]) or ("max" in a and v > a["max"]):
+                bad(f"must be between {a.get('min')} and {a.get('max')}")
+            return v
+        if t == "enum":
+            if value not in a.get("enum", []):
+                bad(f"must be one of {a.get('enum')}")
+            return value
+        if not isinstance(value, str) or value == "":
+            bad("must be a non-empty string")
+        if t == "url":
+            u = urllib.parse.urlparse(value)
+            if u.scheme not in ("http", "https") or not u.netloc:
+                bad("must be an http(s):// URL")
+        if a.get("pattern") and not re.fullmatch(a["pattern"], value):
+            bad(f"must match pattern {a['pattern']}")
+        if t == "path":
+            return self._resolve_path_arg(a, value)
+        return value
+
+    def _resolve_path_arg(self, a: dict, raw: str) -> str:
+        """Path args are resolved against the §6.1 policy and substituted as
+        ABSOLUTE paths — argv is exec'd without a shell, so '~' would never
+        expand (ADR-009)."""
+        name = a["name"]
+        try:
+            resolved = self.policy.resolve_in_roots(raw, for_write=a.get("path_kind") != "dir")
+        except BridgeError as e:
+            raise BridgeError(e.status, e.code, f"arg '{name}': {e.message}", field=name) from e
+        if a.get("path_kind") == "dir" and not resolved.is_dir():
+            raise BridgeError(404, "PATH_NOT_FOUND",
+                              f"arg '{name}': directory does not exist: {raw}", field=name)
+        return str(resolved)
+
+    @staticmethod
+    def _argv_tokens(a: dict, value) -> list[str]:
+        tmpl = a.get("argv")
+        if not tmpl:                     # positional: the value itself
+            return [str(value)]
+        if a.get("type") == "bool":
+            return list(tmpl)            # tokens iff true
+        return [tok.replace("{value}", str(value)) for tok in tmpl]
+
+
 # --------------------------------------------------------------------------- event bus
 
 class EventBus:
@@ -516,12 +840,14 @@ class JobRuntime:
 class JobManager:
     """Owns the job lifecycle (PROTOCOL §3.1) — spawn, stream, cancel, reconcile."""
 
-    def __init__(self, home: Path, store: Store, config: Config, policy: Policy, bus: EventBus):
+    def __init__(self, home: Path, store: Store, config: Config, policy: Policy,
+                 bus: EventBus, registry: ToolRegistry):
         self.home = home
         self.store = store
         self.config = config
         self.policy = policy
         self.bus = bus
+        self.registry = registry
         self.runtimes: dict[str, JobRuntime] = {}
         self.running: set[str] = set()
         self.queue: deque[str] = deque()
@@ -561,18 +887,33 @@ class JobManager:
         if not isinstance(payload, dict):
             raise BridgeError(400, "VALIDATION_FAILED", "body must be a JSON object")
         jtype = payload.get("type", "argv")
-        if jtype != "argv":
+        tool_id = None
+        if jtype == "tool":
+            # PROTOCOL §7.2: argv is synthesized from the schema, then runs
+            # through the SAME allowlist/size checks as a raw argv submit.
+            tool_id = payload.get("tool")
+            if not isinstance(tool_id, str) or not tool_id:
+                raise BridgeError(400, "VALIDATION_FAILED",
+                                  "tool submits need a tool id", field="tool")
+            schema = self.registry.get(tool_id)
+            if schema is None:
+                raise BridgeError(400, "TOOL_UNKNOWN",
+                                  f"no tool schema with id '{tool_id}'", field="tool")
+            argv = [schema["binary"]] + list(schema.get("fixed_argv", [])) + \
+                self.registry.synth_argv(schema, payload.get("args"))
+        elif jtype != "argv":
             raise BridgeError(400, "VALIDATION_FAILED",
-                              f"type '{jtype}' is not implemented in the Phase 2 PoC "
-                              "(only type:\"argv\")", field="type")
+                              f"type '{jtype}' is not implemented (only \"argv\"/\"tool\")",
+                              field="type")
         name = payload.get("name") or "job"
         if not isinstance(name, str) or not (1 <= len(name) <= 200):
             raise BridgeError(400, "VALIDATION_FAILED", "name must be 1..200 chars", field="name")
-        argv = payload.get("argv")
-        if (not isinstance(argv, list) or not (1 <= len(argv) <= 256)
-                or not all(isinstance(a, str) for a in argv)):
-            raise BridgeError(400, "VALIDATION_FAILED",
-                              "argv must be an array of 1..256 strings", field="argv")
+        if jtype != "tool":   # tool argv is synthesized above (§7.2)
+            argv = payload.get("argv")
+            if (not isinstance(argv, list) or not (1 <= len(argv) <= 256)
+                    or not all(isinstance(a, str) for a in argv)):
+                raise BridgeError(400, "VALIDATION_FAILED",
+                                  "argv must be an array of 1..256 strings", field="argv")
         if any(len(a) > 8192 for a in argv) or sum(len(a) for a in argv) > 65536:
             raise BridgeError(400, "VALIDATION_FAILED", "argv exceeds size caps", field="argv")
         binary = self.policy.resolve_binary(argv[0])
@@ -614,7 +955,7 @@ class JobManager:
         n = self.store.next_job_number()
         job_id = f"J-{to_base36(n)}"
         job = {
-            "job_id": job_id, "name": name, "type": "argv", "tool": None,
+            "job_id": job_id, "name": name, "type": jtype, "tool": tool_id,
             "argv": argv, "script": None, "cwd": str(cwd), "env": env,
             "status": "QUEUED", "created_at": now_iso(), "started_at": None, "ended_at": None,
             "pid": None, "pgid": None, "exit_code": None, "signal": None,
@@ -627,7 +968,12 @@ class JobManager:
         self._runtime(job_id)
         if idem:
             self.idem[idem] = (job_id, time.time())
-        self.store.audit("job.submit", f"{job_id} {shlex_join(argv)}")
+        if tool_id:
+            tier = (self.registry.get(tool_id) or {}).get("risk_tier", "safe")
+            self.store.audit("job.submit",
+                             f"{job_id} tool={tool_id} tier={tier} {shlex_join(argv)}")
+        else:
+            self.store.audit("job.submit", f"{job_id} {shlex_join(argv)}")
         self.bus.publish("job.updated", job)
         self.queue.append(job_id)
         await self._try_start_next()
@@ -689,6 +1035,10 @@ class JobManager:
         if rt is None:
             return
         dec = codecs.getincrementaldecoder("utf-8")("replace")
+        # §7.2 progress: parse COMPLETE stdout lines against the tool's
+        # progress_regex; update the job + emit job.updated on change.
+        on_line = self._progress_parser(job_id) if kind == "stdout" else None
+        buf = ""
         try:
             while True:
                 chunk = await stream.read(65536)
@@ -701,11 +1051,50 @@ class JobManager:
                 text = dec.decode(chunk)
                 if text:
                     self._emit(job_id, kind, {"job_id": job_id, "text": text})
+                    if on_line is not None:
+                        buf += text
+                        *lines, buf = buf.split("\n")
+                        for ln in lines:
+                            on_line(ln)
             tail = dec.decode(b"", final=True)
             if tail:
                 self._emit(job_id, kind, {"job_id": job_id, "text": tail})
         except Exception:  # noqa: BLE001
             LOG.exception("output pump failed for %s", job_id)
+
+    def _progress_parser(self, job_id: str):
+        """Build a per-line progress callback, or None for non-tool jobs."""
+        job = self.store.get_job(job_id)
+        if not job or not job.get("tool"):
+            return None
+        schema = self.registry.get(job["tool"])
+        rx_s = schema.get("progress_regex") if schema else None
+        if not rx_s:
+            return None
+        rx = re.compile(rx_s)
+        state = {"pct": None, "detail": None}
+
+        def on_line(line: str) -> None:
+            m = rx.search(line)
+            if not m:
+                return
+            try:
+                pct = float(m.group(1))
+            except (IndexError, ValueError):
+                return
+            pct = min(max(pct, 0.0), 100.0)
+            detail = line.strip()[:200]
+            if state["pct"] is not None and abs(pct - state["pct"]) < 0.05 \
+                    and detail == state["detail"]:
+                return
+            state["pct"], state["detail"] = pct, detail
+            current = self.store.get_job(job_id)
+            if current and current.get("status") == "RUNNING":
+                current["progress_pct"] = round(pct, 1)
+                current["progress_detail"] = detail
+                self.store.save_job(current)
+                self._emit_status(current)
+        return on_line
 
     async def _wait_exit(self, job_id: str, proc) -> None:
         rc = await proc.wait()
@@ -980,8 +1369,10 @@ class BridgeApp:
         self.home, self.port, self.config = home, port, config
         self.store = Store(home / "jobs.db")
         self.policy = Policy(home)
+        self.registry = ToolRegistry(home, self.policy)
         self.bus = EventBus()
-        self.manager = JobManager(home, self.store, config, self.policy, self.bus)
+        self.manager = JobManager(home, self.store, config, self.policy, self.bus,
+                                  self.registry)
         self.started = time.time()
         self._upload_seq = itertools.count(1)
         self.routes = [
@@ -996,6 +1387,9 @@ class BridgeApp:
             ("POST", re.compile(r"^/v1/files$"), self.h_files_ops),
             ("GET", re.compile(r"^/v1/files/content$"), self.h_file_download),
             ("PUT", re.compile(r"^/v1/files/content$"), self.h_file_upload),
+            ("GET", re.compile(r"^/v1/tools$"), self.h_tools_list),
+            ("GET", re.compile(r"^/v1/tools/([A-Za-z0-9._-]+)$"), self.h_tool_get),
+            ("POST", re.compile(r"^/v1/tools/refresh$"), self.h_tools_refresh),
             ("GET", re.compile(r"^/v1/events$"), self.h_events),
             ("POST", re.compile(r"^/v1/system/bridge$"), self.h_bridge_ctl),
         ]
@@ -1236,8 +1630,9 @@ class BridgeApp:
                      "log_ring_mb": round(int(self.config["log_ring_bytes"]) / (1024 * 1024), 2)},
             "features": {"termux_api": shutil.which("termux-notification") is not None,
                          "runit": shutil.which("sv") is not None,
-                         "scheduler": False},
-            "tools_detected": 0,  # tool registry arrives in Phase 9
+                         "scheduler": False,
+                         "tool_schema_errors": list(self.registry.schema_errors)},
+            "tools_detected": len(self.registry.schemas)
         })
 
     async def h_system_policy(self, req, m):
@@ -1249,6 +1644,24 @@ class BridgeApp:
             "queue_depth": int(self.config["queue_depth"]),
             "cancel_grace_ms": int(self.config["cancel_grace_ms"]),
         })
+
+    # -- tools (PROTOCOL §7) ------------------------------------------------
+
+    async def h_tools_list(self, req, m):
+        tools = await self.registry.ensure_probed()
+        return JsonResponse({"tools": tools})
+
+    async def h_tool_get(self, req, m):
+        tid = m.group(1)
+        if self.registry.get(tid) is None:
+            raise BridgeError(404, "NOT_FOUND", f"no tool schema with id '{tid}'")
+        await self.registry._probe_one(tid)
+        return JsonResponse(self.registry._status(tid))
+
+    async def h_tools_refresh(self, req, m):
+        tools = await self.registry.refresh()
+        self.store.audit("tools.refresh", f"{len(tools)} tools probed")
+        return JsonResponse({"tools": tools})
 
     async def h_jobs_post(self, req, m):
         payload = self.parse_json_body(req)

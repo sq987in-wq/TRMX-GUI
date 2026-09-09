@@ -229,3 +229,48 @@ cancel in v1 (documented in ADR-008).
 Screenshot the exact error (open/share failures name the file, the MIME
 type, and the exception), plus the tail of `~/.trmx/bridge.log` if a
 transfer itself failed.
+
+---
+
+# Phase 9 round — Tool Registry, dynamic forms, recipes & chains (2026-09-09)
+
+**Build:** CI green on the Phase 9 commit (bridge **v0.4.0**, app with
+Toolbox/forms/recipes/chains). **Both planes change** — update the APK *and*
+the bridge (same sequence as Phase 7):
+
+1. **App:** latest green run → `trmx-debug-apk` → install in place.
+2. **Bridge:** dashboard → **Re-run setup** (idempotent installer, base URL
+   on the branch) → verify the dashboard shows **Bridge v0.4.0**.
+3. **Termux prep (optional but recommended):** `pkg install -y yt-dlp ffmpeg`
+   so the first toolbox scan finds real binaries — or leave them out and use
+   the app's own install buttons (step 4).
+
+## Acceptance checklist
+
+| # | Action | Expected |
+|---|--------|----------|
+| 1 | Dashboard → **Tools** | Toolbox loads: cards for yt-dlp / ffmpeg / aria2c with ✓/✗, version lines, tier badges |
+| 2 | **scan ⟳** | rescan notice; tools you installed in Termux show ✓ |
+| 3 | Tap a ✗ card → **install** → confirm | runs `pkg install -y …` as a job (live console in job detail); when it finishes the toolbox rescans and the card flips ✓ |
+| 4 | yt-dlp card → fill **Video URL** (any small public video) → 📁 pick `~/downloads` → **RUN ▶** | job submitted; dashboard row shows a **live % bar**; detail console shows `[download] …%` lines; file lands in `~/downloads` (check in Files) |
+| 5 | Reopen the form → **Try ▸ MP4, best quality** | example prefills the fields |
+| 6 | Form: type a bad URL / rate `500X` | inline ⚠ validation before any submit |
+| 7 | ffmpeg card (tier CONFIRM) → pick input+output → RUN | confirmation dialog shows the exact command before it runs |
+| 8 | Form → **☆ save recipe** → name it | appears under Recipes; **long-press the TRMX app icon** → the recipe is a one-tap shortcut |
+| 9 | Tap the shortcut (app closed) | app opens straight to the prefilled form |
+| 10 | Recipes → **share** | system share sheet offers the `.json` file |
+| 11 | **Chains** → + new chain → add ffmpeg step (output `~/a.mp4`) → add ffmpeg step with input `$PREV_FILE` → save → **▶ run** | step 1 runs; when it completes step 2 auto-runs with the previous output; run card shows per-step status |
+| 12 | While a chain runs: Termux → `~/.trmx/trmx stop`, wait, restart | chain **PAUSES** with "bridge unreachable — resume when it is back"; after restarting the bridge, **resume from step N** continues |
+| 13 | (advanced) In Termux: `mkdir -p ~/.trmx/tools`, drop a JSON schema there, **scan ⟳** | new card + full form from your schema — zero app changes |
+
+Notes & honest limits: yt-dlp cannot be chained FROM (server-named output
+files — the builder marks it "no known output"); if the app is killed
+mid-chain, finished steps remain real jobs in the history and the chain is
+re-run from the start; progress parsing reads stdout lines only.
+
+## If something breaks
+
+Screenshot the toolbox card / form error / chain state, and include the tail
+of `~/.trmx/bridge.log`. Tool submits surface typed errors
+(`TOOL_UNKNOWN`, `ARG_INVALID` with the field name, `PATH_DENIED`,
+`PATH_NOT_FOUND`).
