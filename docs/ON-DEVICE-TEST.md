@@ -185,3 +185,43 @@ Same as §4, plus: file ops surface typed errors from the bridge
 (`CONFIRM_REQUIRED`, `PATH_NOT_EMPTY`, `PATH_EXISTS`, `NOT_A_FILE`,
 `CHECKSUM_MISMATCH`) — screenshot the exact error text and include the tail
 of `~/.trmx/bridge.log`.
+
+---
+
+# Phase 8 round — polish, UX & FileProvider acceptance (2026-09-09)
+
+**Build:** CI green on `c85262f` (run 34368335630). **App-only round — no
+bridge update needed** (bridge stays v0.3.0, checksums unchanged).
+
+## Update sequence
+
+1. Download `trmx-debug-apk` from the green run → unzip → install in place
+   (token survives; no wizard re-run needed).
+
+## Acceptance checklist
+
+| # | Action | Expected |
+|---|--------|----------|
+| 1 | Look at the app drawer | TRMX now has a real icon: dark slate plate, green `>` chevron + blue underscore |
+| 2 | Files → long-press any **file** | action sheet: Open / Share / Save to app documents / Rename / Delete |
+| 3 | Long-press a **folder** | action sheet: Rename / Delete only |
+| 4 | Open a video (`.mp4`/`.mkv` in `~/downloads`) | progress bar fills (determinate, byte counts) → player app opens and plays it |
+| 5 | Open a file with no viewer (e.g. `.log`) | honest error: "no app can open … (text/plain) — try Share instead" |
+| 6 | Share a file | system share sheet opens → share somewhere → content arrives intact |
+| 7 | Save a **large** file to app documents | determinate progress bar the whole way → "saved N bytes → path" notice |
+| 8 | Upload a **large** file via the picker | determinate progress bar → listing shows it with the right size |
+| 9 | Navigate into a subfolder → system **Back** | goes **up one level**; only at `~` does Back exit Files to the dashboard |
+| 10 | Dashboard | dot is green "● connected"; after Stop bridge + Refresh it turns red "● connection error" with the error banner |
+| 11 | Files with the bridge stopped | error card with a **retry** button (start the bridge again → retry works) |
+| 12 | Open an empty folder | centered "This folder is empty." |
+
+Notes: the staged open/share copy lives in app cache, **single-slot**
+(replaced on every open) — Android may reclaim it under storage pressure,
+which is fine; the Termux original is the source of truth. No mid-transfer
+cancel in v1 (documented in ADR-008).
+
+## If something breaks
+
+Screenshot the exact error (open/share failures name the file, the MIME
+type, and the exception), plus the tail of `~/.trmx/bridge.log` if a
+transfer itself failed.
