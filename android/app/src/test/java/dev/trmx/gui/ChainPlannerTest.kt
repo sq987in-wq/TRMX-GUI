@@ -77,6 +77,6 @@ class ChainPlannerTest {
         assertEquals("~/a.mp4", resolved["input"]!!.let { (it as JsonPrimitive).content })
 
         val outputs = ChainPlanner.outputsUpTo(def, schemas, 3)
-        assertEquals(mapOf(0 to "~/a.mp4", 1 to "~/b.mp4"), outputs)
+        assertEquals(mapOf(0 to "~/a.mp4", 1 to "~/b.mp4", 2 to "~/c.mp4"), outputs)
     }
 }

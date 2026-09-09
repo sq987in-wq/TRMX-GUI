@@ -84,7 +84,9 @@ class FormEngineTest {
             "audio" to FieldValue(bool = false),
         ) + FormEngine.initialValues(schema).filterKeys { it !in setOf("url", "format", "audio") }
         val payload = FormEngine.argsPayload(schema, v)
-        assertEquals(setOf("url", "format", "outdir"), payload.keys)
+        // this test schema has NO outdir default (unlike the real yt-dlp
+        // fixture), so a blank outdir is rightly omitted
+        assertEquals(setOf("url", "format"), payload.keys)
         assertEquals("\"best\"", payload["format"].toString())
         assertFalse(payload.containsKey("audio"))
         assertTrue(FormEngine.isSubmittable(schema, v))
