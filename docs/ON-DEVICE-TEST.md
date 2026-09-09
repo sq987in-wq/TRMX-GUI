@@ -190,6 +190,10 @@ of `~/.trmx/bridge.log`.
 
 # Phase 8 round — polish, UX & FileProvider acceptance (2026-09-09)
 
+> **STATUS: VERIFIED ✅ — 2026-09-09, physical device, Android 16.**
+> Launcher icon, back navigation (up-the-tree first), and open/share via
+> FileProvider all confirmed working.
+
 **Build:** CI green on `c85262f` (run 34368335630). **App-only round — no
 bridge update needed** (bridge stays v0.3.0, checksums unchanged).
 

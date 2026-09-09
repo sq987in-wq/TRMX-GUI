@@ -30,6 +30,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 - Tests: `FileMimeTest` (4) + 2 progress tests in `FilesTest` (7 → 9);
   conformance PASS; Termux suite 49/49 (bridge untouched, regression only).
 
+### Verified — on-device (Android 16, 2026-09-09)
+Phase 8 closed on real hardware: launcher icon, back navigation
+(walks up the directory tree before exiting), and open/share via
+FileProvider all confirmed working. App-only round — bridge stayed
+v0.3.0 throughout.
+
 ### Added — Phase 7: file manager (both planes) (2026-09-08)
 - **Bridge v0.3.0 — PROTOCOL §6 implemented in full**: list/stat with
   1000-entry paging, mkdir/touch/rename/move/copy/delete with the
