@@ -216,10 +216,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun client() = BridgeClient(store.bridgeBaseUrl, store.token, http)
 
-    private companion object {
-        val TERMINAL_STATES = setOf("COMPLETED", "FAILED", "CANCELLED", "LOST")
-    }
-
     // ---- wizard ---------------------------------------------------------
 
     fun consentTermux(given: Boolean) = applyEvent(WizardEvent.ConsentTermux(given))
@@ -1069,7 +1065,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 delay(2_000L)
                 when (val r = client().getJob(jid)) {
                     is BridgeResult.Success ->
-                        if (r.data.status in TERMINAL_STATES) done = r.data
+                        if (r.data.status in TERMINAL) done = r.data
                     is BridgeResult.HttpError -> {
                         _chains.update { s -> s.copy(run = s.run?.copy(status = "PAUSED",
                             error = "step ${i + 1}: job vanished (HTTP ${r.status}) — resume?")) }
@@ -1204,7 +1200,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     d.copy(jobs = jobs)
                 }
                 // self-healing toolbox: a finished pkg install triggers a rescan
-                if (installWatch == job.job_id && job.status in TERMINAL_STATES) {
+                if (installWatch == job.job_id && job.status in TERMINAL) {
                     installWatch = null
                     _tools.update { it.copy(notice =
                         "install ${if (job.status == "COMPLETED") "finished" else job.status.lowercase()} — rescanning") }

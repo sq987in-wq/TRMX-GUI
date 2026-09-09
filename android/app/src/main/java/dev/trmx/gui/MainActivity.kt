@@ -124,7 +124,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
                     }
-                    vm.getApplication().startActivity(
+                    vm.getApplication<android.app.Application>().startActivity(
                         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     vm.afterOpen(null)
                 } catch (e: ActivityNotFoundException) {

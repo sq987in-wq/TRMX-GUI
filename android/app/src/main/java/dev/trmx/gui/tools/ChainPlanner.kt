@@ -21,7 +21,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonPrimitive
 
-const val PREV_FILE = "$PREV_FILE"
+const val PREV_FILE = "\$PREV_FILE"   // literal $PREV_FILE (escaped template)
 
 @Serializable
 data class ChainStep(

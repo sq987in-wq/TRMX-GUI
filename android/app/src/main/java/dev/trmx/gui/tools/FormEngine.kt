@@ -43,7 +43,7 @@ object FormEngine {
     // ---- validation (mirrors §7.2; bridge is authoritative) ---------------
 
     fun validate(a: ToolArg, v: FieldValue): String? {
-        if (v.isBlank()) {
+        if (v.isBlank) {
             return if (a.required) "required" else null
         }
         return when (a.type) {
@@ -92,7 +92,7 @@ object FormEngine {
         val tokens = mutableListOf<String>()
         for (a in schema.args) {
             val v = values[a.name] ?: continue
-            if (v.isBlank()) continue
+            if (v.isBlank) continue
             val tmpl = a.argv
             when {
                 a.type == "bool" -> if (v.bool) tokens.addAll(tmpl ?: emptyList())
