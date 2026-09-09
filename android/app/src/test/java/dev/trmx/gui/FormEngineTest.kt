@@ -29,7 +29,7 @@ class FormEngineTest {
                     default = Json.parseToJsonElement("false"), argv = listOf("-x")),
             ToolArg(name = "rate", label = "Rate", type = "string",
                     pattern = "^\\d+[KM]$", argv = listOf("-r", "{value}")),
-            ToolArg(name = "tries", label = "Tries", type = "int", min = 1, max = 9,
+            ToolArg(name = "tries", label = "Tries", type = "int", min = 1.0, max = 9.0,
                     argv = listOf("-t", "{value}")),
             ToolArg(name = "outdir", label = "Out", type = "path", path_kind = "dir",
                     argv = listOf("-P", "{value}")),
