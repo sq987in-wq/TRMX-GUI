@@ -303,3 +303,31 @@ see the Phase 9 section).
 
 Screenshot the screen (theming regressions are visual by nature), plus the
 usual `~/.trmx/bridge.log` tail if a transfer/listing failed.
+
+# UX-audit round (P0 + P1) — correctness & Command Center (2026-09-10)
+
+**Build:** CI green on the UX-audit commits. **App-only** — bridge stays
+v0.4.1, install the APK in place. No wizard re-run needed.
+
+## Acceptance checklist
+
+| # | Action | Expected |
+|---|--------|----------|
+| 1 | ffmpeg form, **change nothing**, tap RUN | the job **submits** — no "arg 'crf': must be an integer" anywhere (the P0 wire bug) |
+| 2 | Same for http-server (port) and aria2c (connections) | submits with defaults |
+| 3 | Home | **Command Center**: status pill top-right, Quick run (if recipes exist), Tasks — **no bridge metrics dump** |
+| 4 | Tap the status pill | **Diagnostics sheet** slides up: version/protocol/uptime/memory + Refresh, Re-run setup, **Stop bridge** (wraps cleanly, never "Sto/p/brid/ge") |
+| 5 | Tasks list | human labels ("Video Downloader (yt-dlp) · done · 3 min ago"), tiny `J-… ⧉` line; tap the id → copied |
+| 6 | Files | **no green vertical bar**; toolbar buttons wrap to a second row if narrow; **dotfiles hidden** by default |
+| 7 | Files → toggle "◌ dotfiles" | `.trmx`, `.bashrc` … appear; toggle state survives navigation |
+| 8 | A folder with only dotfiles | "N hidden entries" + **show dotfiles** button (not a dead empty screen) |
+| 9 | Toolbox | **⚡ Custom command** card at top → the argv dialog (moved from Home) |
+| 10 | Tool form → RUN while submitting | spinner sits **inside** the RUN button, button row never overflows |
+| 11 | Job detail | title is the **task name**, `J-…` copyable underneath; card leads with "tool · time" |
+
+## If something breaks
+
+Screenshots for anything visual; `~/.trmx/bridge.log` tail for submit or
+listing failures. For a rejected submit, note the exact error text shown
+under the form — the wire-type fix should make ARG_INVALID on numeric
+args impossible.

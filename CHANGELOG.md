@@ -6,6 +6,40 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Fixed — UX-audit P0: correctness triage (2026-09-10, app-only)
+- **Wire typing (the "must be an integer" bug):** int/float tool args were
+  sent as JSON strings; the bridge's §7.2 `isinstance` validation rightly
+  rejected them — every submit with a numeric arg (ffmpeg CRF, http-server
+  port, aria2c connections) failed, including *untouched defaults*.
+  `argsPayload` now sends native JSON numbers; saved chains/recipes are
+  re-typed at submit (`coerceLegacyArgs`); unparseable values stay loud.
+- **Wrapping action buttons ("Sto/p/brid/ge"):** unweighted button rows
+  squeeze the last child into a vertical sliver (in Files the squeezed
+  filled upload button was the "green bar"). All clusters now go through
+  `ActionFlowRow` (custom wrap Layout — see ADR-012 for why not FlowRow)
+  — wrap instead of squeeze; RUN's spinner moved
+  inside the button.
+- **Files:** dotfiles hidden by default (client-side `FilesFilter` +
+  toggle; the §6.2 bridge listing stays complete), with a "show dotfiles"
+  empty state for hidden-only folders.
+- Slider text formatting is `Locale.ROOT`-stable (decimal-separator safety).
+- Tests: `UxAuditTest` (5).
+
+### Changed — UX-audit P1: Command Center IA & human task labels (2026-09-10, app-only, ADR-012)
+- **Home inverted**: status pill (connected · N running · error) → Quick
+  run (saved recipes) → Tasks. The bridge metrics dump no longer
+  dominates Home.
+- **Diagnostics bottom sheet** (opened from the status pill): full bridge
+  metrics + Refresh + Re-run setup + Stop bridge. `GET /v1/system/info`
+  stays the §2.1 cold-connect probe — presentation moved, data flow didn't.
+- **Human task labels** (`JobLabels`): name-at-submit → binary → tool
+  fallback chain, status verbs, relative time; J-IDs demoted to copyable
+  secondary metadata (still one tap away for bug reports). Job detail
+  title is the human label.
+- **Manual argv submission** moved Home → Toolbox ("⚡ Custom command"
+  card); argv-first unchanged (ADR-001).
+- Tests: `JobLabelsTest` (5).
+
 ### Added — Phase 9.5: executive polish, x_trmx & artifact cards (2026-09-10, app-only)
 - **Terminal-luxe design system** (ADR-011): designed dark scheme
   (terminal green / sky / amber on deep slate with proper tonal surfaces),
