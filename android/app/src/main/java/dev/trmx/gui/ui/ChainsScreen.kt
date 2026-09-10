@@ -47,7 +47,6 @@ fun ChainsScreen(
     state: ChainsState,
     tools: List<ToolStatus>,
     jobs: List<JobSummary>,
-    onBack: () -> Unit,
     onNew: () -> Unit,
     onEditDef: (String) -> Unit,
     onDeleteDef: (String) -> Unit,
@@ -59,20 +58,19 @@ fun ChainsScreen(
     onRemoveStep: (Int) -> Unit,
     onEditStep: (Int) -> Unit,
     onSaveDef: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var addStepDialog by remember { mutableStateOf(false) }
     val schemas = tools.associate { it.schema.id to it.schema }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(Sp.m),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = onBack) { Text("← Toolbox") }
-            Spacer(Modifier.width(10.dp))
             Text("Chains", fontSize = 24.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
             OutlinedButton(onClick = onNew) { Text("+ new chain") }

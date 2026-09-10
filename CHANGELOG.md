@@ -6,6 +6,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Added — Phase 9.5: executive polish, x_trmx & artifact cards (2026-09-10, app-only)
+- **Terminal-luxe design system** (ADR-011): designed dark scheme
+  (terminal green / sky / amber on deep slate with proper tonal surfaces),
+  12 dp field shapes, strict 4/8/16/24 spacing, all status/tier colors
+  centralized (`TrmxColors`) — replacing the default purple M3 look and
+  per-screen color maps.
+- **Form overhaul**: errors only after touch (or a run attempt — RUN stays
+  enabled and marks everything touched), path pickers as trailing icons
+  inside the field, segmented-button enums (≤4), sliders for bounded
+  numerics, `supportingText` help, masked secret fields with reveal.
+- **`x_trmx` UI vocabulary** (additive, optional, bridge-passed-through):
+  `{secret, widget, unit, artifact}` per arg — rendering hints only,
+  validation and argv synthesis never depend on it. Bridge-side log
+  redaction for secrets lands in Phase 10.
+- **Bottom NavigationBar** (Home / Files / Tools / Chains) replacing
+  back-button chains; overlay screens (job detail, tool form) float above.
+- **Artifact cards**: completed tool jobs list their outputs — exact
+  (schema-declared) + detected (new files in outdir, mtime ≥ started_at,
+  honestly labeled) — each with open/share via the Phase 8 machinery.
+  `openRemote` refactor makes any wire path openable from any screen.
+- Tests: `PolishTest` (7 — touched-state, widget selection, x_trmx decode,
+  artifact derivation/merge/dedupe).
+
+
 ### Changed — universal runtime: broadened bundled tools + fully generic progress engine (bridge v0.4.1, 2026-09-10)
 - Framing made explicit: TRMX-GUI is a **Universal Linux Runtime & Visual
   Control Plane for Android** — the media trio was a showcase, never the

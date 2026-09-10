@@ -40,8 +40,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.text.format.Formatter
+import androidx.compose.ui.platform.LocalContext
+import dev.trmx.gui.ArtifactsState
 import dev.trmx.gui.JobDetailState
 import dev.trmx.gui.job.JobOutputState
+import dev.trmx.gui.tools.Artifact
 
 private val ACTIVE = setOf("QUEUED", "RUNNING", "CANCELLING")
 
@@ -49,9 +53,11 @@ private val ACTIVE = setOf("QUEUED", "RUNNING", "CANCELLING")
 fun JobDetailScreen(
     state: JobDetailState,
     output: JobOutputState?,
+    artifacts: ArtifactsState,
     onBack: () -> Unit,
     onCancelJob: (String) -> Unit,
     onReplayOutput: () -> Unit,
+    onOpenArtifact: (Artifact, Boolean) -> Unit,
 ) {
     var confirmCancel by remember { mutableStateOf(false) }
 
@@ -112,6 +118,11 @@ fun JobDetailScreen(
                 }
             }
 
+            if (artifacts.jobId == state.jobId &&
+                (artifacts.artifacts.isNotEmpty() || artifacts.loading || artifacts.error != null)) {
+                ArtifactsCard(artifacts, onOpenArtifact)
+            }
+
             output?.let { OutputConsole(it, onReplayOutput) }
 
             if (job.status in ACTIVE) {
@@ -167,16 +178,47 @@ private fun KV(k: String, v: String) {
 }
 
 @Composable
-private fun statusColor(status: String): Color = when (status) {
-    "RUNNING" -> Color(0xFF4CAF50)
-    "QUEUED" -> Color(0xFFFFC107)
-    "COMPLETED" -> Color(0xFF2196F3)
-    "FAILED" -> Color(0xFFF44336)
-    "CANCELLED" -> Color(0xFF9E9E9E)
-    "CANCELLING" -> Color(0xFFFF9800)
-    "LOST" -> Color(0xFFFF9800)
-    else -> Color.Gray
+@Composable
+private fun ArtifactsCard(
+    state: ArtifactsState,
+    onOpenArtifact: (Artifact, Boolean) -> Unit,
+) {
+    val context = LocalContext.current
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Artifacts", fontWeight = FontWeight.Bold)
+            if (state.loading) {
+                Text("collecting outputs…", style = MaterialTheme.typography.bodySmall,
+                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            state.error?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall,
+                     color = MaterialTheme.colorScheme.error)
+            }
+            state.artifacts.forEach { a ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("■", color = TrmxColors.Completed,
+                         modifier = Modifier.width(24.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(a.name, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            buildString {
+                                if (a.size != null) append(Formatter.formatShortFileSize(context, a.size))
+                                append(if (a.exact) "  · output" else "  · detected")
+                                a.mtime?.let { append("  · ").append(it) }
+                            },
+                            fontFamily = FontFamily.Monospace, fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    TextButton(onClick = { onOpenArtifact(a, false) }) { Text("open") }
+                    TextButton(onClick = { onOpenArtifact(a, true) }) { Text("share") }
+                }
+            }
+        }
+    }
 }
+
+private fun statusColor(status: String): Color = TrmxColors.status(status)
 
 
 // ---- live output console (Phase 6) ---------------------------------------

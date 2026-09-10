@@ -176,6 +176,20 @@ data class JobsPage(
 
 // ---- Tool Registry (PROTOCOL §7, bridge v0.4.0) --------------------------
 
+/**
+ * x_trmx UI vocabulary (Phase 9.5, additive & optional — schemas without it
+ * render exactly as before; the bridge passes it through untouched per the
+ * unknown-field tolerance rule). Rendering hints only: validation and argv
+ * synthesis NEVER depend on x_trmx.
+ */
+@Serializable
+data class XTrmx(
+    val secret: Boolean = false,      // masked input (bridge-side log redaction arrives in Phase 10)
+    val widget: String? = null,       // render hint: slider|segmented|chips|toggle|textarea
+    val unit: String? = null,         // suffix inside the field, e.g. "MiB"
+    val artifact: Boolean = false,    // this arg's value is a job output (artifact card)
+)
+
 /** One form field spec (§7.2). `default` is a raw JsonElement (string/bool/int). */
 @Serializable
 data class ToolArg(
@@ -191,6 +205,7 @@ data class ToolArg(
     val min: Double? = null,
     val max: Double? = null,
     val path_kind: String? = null,    // file|dir
+    val x_trmx: XTrmx? = null,        // optional UI hints (never affect validation)
 )
 
 @Serializable

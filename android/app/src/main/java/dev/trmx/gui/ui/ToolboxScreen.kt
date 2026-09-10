@@ -35,7 +35,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -43,17 +42,10 @@ import androidx.compose.ui.unit.sp
 import dev.trmx.gui.model.ToolStatus
 import dev.trmx.gui.store.Recipe
 
-private val TIER_COLORS = mapOf(
-    "safe" to Color(0xFF4CAF50),
-    "confirm" to Color(0xFFFFC107),
-    "destructive" to Color(0xFFF44336),
-)
-
 @Composable
 fun ToolboxScreen(
     state: dev.trmx.gui.ToolsState,
     recipes: List<Recipe>,
-    onBack: () -> Unit,
     onRefresh: () -> Unit,
     onOpenTool: (String) -> Unit,
     onInstall: (ToolStatus) -> Unit,
@@ -62,6 +54,7 @@ fun ToolboxScreen(
     onShareRecipe: (Recipe) -> Unit,
     onImportRecipe: (android.net.Uri) -> Unit,
     onOpenChains: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val importPicker = rememberLauncherForActivityResult(
@@ -71,15 +64,13 @@ fun ToolboxScreen(
     var confirmInstall by remember { mutableStateOf<ToolStatus?>(null) }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(Sp.m),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = onBack) { Text("← Dashboard") }
-            Spacer(Modifier.width(10.dp))
             Text("Toolbox", fontSize = 24.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
             if (state.loading) CircularProgressIndicator(strokeWidth = 3.dp)
@@ -185,7 +176,7 @@ private fun ToolCard(t: ToolStatus, onOpenTool: (String) -> Unit, onInstall: () 
                 Text(t.schema.name, fontWeight = FontWeight.Bold,
                      modifier = Modifier.weight(1f))
                 Text(t.schema.risk_tier.uppercase(),
-                     color = TIER_COLORS[t.schema.risk_tier] ?: Color.Gray,
+                     color = TrmxColors.tier(t.schema.risk_tier),
                      fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
             Text(t.schema.description, style = MaterialTheme.typography.bodySmall)

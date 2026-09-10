@@ -57,7 +57,6 @@ private val TYPE_GLYPH = mapOf(
 @Composable
 fun FilesScreen(
     state: FileBrowserState,
-    onBack: () -> Unit,
     onOpenPath: (String) -> Unit,
     onUp: () -> Unit,
     onRefresh: () -> Unit,
@@ -72,6 +71,7 @@ fun FilesScreen(
     pickFile: Boolean? = null,
     onPicked: (String) -> Unit = {},
     onCancelPick: () -> Unit = {},
+    modifier: Modifier = Modifier,
 ) {
     var newDirDialog by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<FileEntry?>(null) }
@@ -88,16 +88,16 @@ fun FilesScreen(
     }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(Sp.m),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = { if (pickFile != null) onCancelPick() else onBack() }) {
-                Text(if (pickFile != null) "← cancel" else "← Dashboard")
+            if (pickFile != null) {
+                OutlinedButton(onClick = onCancelPick) { Text("← cancel") }
+                Spacer(Modifier.width(Sp.s))
             }
-            Spacer(Modifier.width(10.dp))
             Text(
                 when (pickFile) {
                     true -> "Pick a file"

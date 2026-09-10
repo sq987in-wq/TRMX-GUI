@@ -274,3 +274,32 @@ Screenshot the toolbox card / form error / chain state, and include the tail
 of `~/.trmx/bridge.log`. Tool submits surface typed errors
 (`TOOL_UNKNOWN`, `ARG_INVALID` with the field name, `PATH_DENIED`,
 `PATH_NOT_FOUND`).
+
+---
+
+# Phase 9.5 round — executive polish & artifacts (2026-09-10)
+
+**Build:** CI green on the Phase 9.5 commit. **App-only** — bridge stays
+v0.4.1 (if you skipped the v0.4.1 update, do the bridge Re-run setup first,
+see the Phase 9 section).
+
+## Acceptance checklist
+
+| # | Action | Expected |
+|---|--------|----------|
+| 1 | Open the app | terminal-luxe look: deep-slate surfaces, green accents, **bottom navigation** (Home / Files / Tools / Chains) — no more "← Dashboard" buttons |
+| 2 | Any tool form, before typing | **no red errors anywhere**; help text sits under each field |
+| 3 | Tool form: type an invalid URL | error appears under the field only after you edit it |
+| 4 | Path field | the 📁 picker sits **inside the field** (trailing icon), aligned |
+| 5 | yt-dlp form: Quality | **segmented buttons** (mp4 / mkv / best), not a text field |
+| 6 | ffmpeg form: CRF (0–51) | **slider** with value readout |
+| 7 | Tap **RUN** with an empty required field | fields light up with their errors (button never dead) |
+| 8 | Run yt-dlp on a small video → open the job | job detail shows an **Artifacts** card; the video is listed with open/share; "detected" entries are labeled as such |
+| 9 | Artifact → **open** | progress → viewer opens it |
+| 10 | Navigate Files → system Back | up the tree first, then Home tab |
+| 11 | Tools / Chains tabs via bottom bar | instant switching, state kept |
+
+## If something breaks
+
+Screenshot the screen (theming regressions are visual by nature), plus the
+usual `~/.trmx/bridge.log` tail if a transfer/listing failed.

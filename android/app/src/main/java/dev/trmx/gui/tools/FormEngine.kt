@@ -86,6 +86,29 @@ object FormEngine {
             validate(a, v) == null
         }
 
+    /**
+     * Error shown to the user: only after the field was touched (or the user
+     * attempted to run — the caller marks everything touched then). An empty
+     * required field shows nothing until touched; a touched+bad field shows
+     * its reason (Phase 9.5: no premature red labels).
+     */
+    fun visibleError(a: ToolArg, v: FieldValue, touched: Boolean): String? =
+        if (!touched) null else validate(a, v)
+
+    /** Which widget should render this arg (x_trmx.widget > type defaults). */
+    fun widgetFor(a: ToolArg): String {
+        val hint = a.x_trmx?.widget
+        if (hint != null) return hint
+        return when {
+            a.type == "enum" && (a.enum?.size ?: 0) <= 4 -> "segmented"
+            a.type == "enum" -> "chips"
+            a.type == "bool" -> "toggle"
+            (a.type == "int" || a.type == "float") && a.min != null && a.max != null
+                && (a.max - a.min) <= 200.0 -> "slider"
+            else -> "field"
+        }
+    }
+
     // ---- live argv preview (§7.2 synthesis, mirrored) ----------------------
 
     fun previewArgv(schema: ToolSchema, values: Map<String, FieldValue>): List<String> {

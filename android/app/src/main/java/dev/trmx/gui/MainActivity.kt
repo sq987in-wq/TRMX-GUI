@@ -7,6 +7,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -17,7 +22,6 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.trmx.gui.model.ToolExample
-import dev.trmx.gui.tools.FieldValue
 import dev.trmx.gui.ui.ChainsScreen
 import dev.trmx.gui.ui.DashboardScreen
 import dev.trmx.gui.ui.FilesScreen
@@ -29,7 +33,7 @@ import dev.trmx.gui.ui.WizardScreen
 import dev.trmx.gui.wizard.WizardStep
 import java.io.File
 
-private enum class Screen { DASHBOARD, FILES, TOOLBOX, TOOLFORM, CHAINS }
+private enum class Screen { DASHBOARD, FILES, TOOLBOX, CHAINS }
 
 private const val FILE_PROVIDER = "dev.trmx.gui.fileprovider"
 
@@ -72,6 +76,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
     val toolFormState by vm.toolForm.collectAsStateWithLifecycle()
     val chainsState by vm.chains.collectAsStateWithLifecycle()
     val recipes by vm.recipes.collectAsStateWithLifecycle()
+    val artifactsState by vm.artifacts.collectAsStateWithLifecycle()
     val termuxInstalled = remember { vm.isTermuxInstalled() }
     var screen by remember { mutableStateOf(Screen.DASHBOARD) }
 
@@ -79,6 +84,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
     LaunchedEffect(Unit) {
         pendingRecipeId?.let { id ->
             pendingRecipeId = null
+            screen = Screen.TOOLBOX
             vm.loadTools()
             vm.openRecipe(id)
         }
@@ -99,18 +105,19 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
         )
 
         else -> {
-            // local capture: `detail` is a delegated property and cannot be smart-cast
+            // local capture: delegated properties cannot be smart-cast
             val detailState = detail
             val toolForm = toolFormState
 
             // Staged open/share (ADR-008): fired at root so it works from
-            // every screen — Files, Toolbox (recipe share), anywhere.
+            // every screen — Files, Toolbox (recipe share), artifacts, anywhere.
             val pending = filesState.pendingOpen
             LaunchedEffect(pending) {
                 if (pending == null) return@LaunchedEffect
                 try {
                     val uri = FileProvider.getUriForFile(
-                        vm.getApplication(), FILE_PROVIDER, File(pending.path))
+                        vm.getApplication<android.app.Application>(), FILE_PROVIDER,
+                        File(pending.path))
                     val intent = if (pending.share) {
                         Intent(Intent.ACTION_SEND).apply {
                             type = pending.mime
@@ -140,18 +147,23 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
             LaunchedEffect(Unit) { vm.startEvents() }
 
             if (detailState != null) {
+                BackHandler { vm.selectJob(null) }
                 JobDetailScreen(
                     state = detailState,
                     output = output,
+                    artifacts = artifactsState,
                     onBack = { vm.selectJob(null) },
                     onCancelJob = vm::cancelJob,
                     onReplayOutput = vm::replayOutput,
+                    onOpenArtifact = vm::openArtifact,
                 )
             } else if (toolForm.schema != null) {
-                BackHandler { vm.closeToolForm(); screen = Screen.TOOLBOX }
+                // The form renders above the tab content; closing it returns
+                // to whichever tab opened it (Toolbox, Chains, or Dashboard).
+                BackHandler { vm.closeToolForm() }
                 ToolFormScreen(
                     state = toolForm,
-                    onBack = { vm.closeToolForm(); screen = Screen.TOOLBOX },
+                    onBack = vm::closeToolForm,
                     onEdit = vm::editFieldValue,
                     onBrowsePath = { arg ->
                         vm.pickPathFor(arg)
@@ -165,101 +177,134 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                     onSubmit = vm::submitToolForm,
                     onSaveRecipe = vm::saveRecipeFromForm,
                 )
-            } else if (screen == Screen.FILES) {
-                // Back walks up the directory tree first, then exits to the
-                // screen that opened the browser (form picker or dashboard).
-                val picking = toolFormState.pathArg != null
-                BackHandler {
-                    if (picking) { vm.cancelPathPick(); screen = Screen.TOOLFORM }
-                    else if (!vm.filesUp()) screen = Screen.DASHBOARD
-                }
-                LaunchedEffect(Unit) { if (filesState.entries.isEmpty()) vm.openPath(filesState.path) }
-                val pickArg = toolFormState.pathArg
-                FilesScreen(
-                    state = filesState,
-                    onBack = { if (picking) { vm.cancelPathPick(); screen = Screen.TOOLFORM } else screen = Screen.DASHBOARD },
-                    onOpenPath = vm::openPath,
-                    onUp = { vm.filesUp() },
-                    onRefresh = vm::refreshFiles,
-                    onMakeDir = vm::makeDir,
-                    onRename = vm::renameEntry,
-                    onDelete = vm::deleteEntry,
-                    onDownload = vm::downloadEntry,
-                    onUpload = vm::uploadFromUri,
-                    onOpenFile = { vm.openEntry(it, false) },
-                    onShareFile = { vm.openEntry(it, true) },
-                    pickFile = pickArg?.let { arg ->
-                        toolFormState.schema?.args
-                            ?.firstOrNull { it.name == arg }
-                            ?.let { it.path_kind != "dir" }
-                    },
-                    onPicked = { path ->
-                        vm.pathPicked(path)
-                        screen = Screen.TOOLFORM
-                    },
-                    onCancelPick = { vm.cancelPathPick(); screen = Screen.TOOLFORM },
-                )
-            } else if (screen == Screen.TOOLBOX) {
-                BackHandler { screen = Screen.DASHBOARD }
-                LaunchedEffect(Unit) { vm.loadTools() }
-                ToolboxScreen(
-                    state = toolsState,
-                    recipes = recipes,
-                    onBack = { screen = Screen.DASHBOARD },
-                    onRefresh = vm::refreshToolsNow,
-                    onOpenTool = { toolId -> vm.openToolForm(toolId); screen = Screen.TOOLFORM },
-                    onInstall = vm::installTool,
-                    onOpenRecipe = { id -> vm.openRecipe(id); screen = Screen.TOOLFORM },
-                    onDeleteRecipe = vm::deleteRecipe,
-                    onShareRecipe = vm::shareRecipe,
-                    onImportRecipe = vm::importRecipe,
-                    onOpenChains = { screen = Screen.CHAINS },
-                )
-            } else if (screen == Screen.CHAINS) {
-                BackHandler { screen = Screen.TOOLBOX }
-                ChainsScreen(
-                    state = chainsState,
-                    tools = toolsState.tools,
-                    jobs = dashboard.jobs,
-                    onBack = { screen = Screen.TOOLBOX },
-                    onNew = vm::newChainBuilder,
-                    onEditDef = vm::editChainDef,
-                    onDeleteDef = vm::deleteChainDef,
-                    onRun = vm::runChain,
-                    onResume = vm::resumeChain,
-                    onStopRun = vm::stopChainRun,
-                    onSetTitle = vm::setChainTitle,
-                    onAddStep = vm::addChainStep,
-                    onRemoveStep = vm::removeChainStep,
-                    onEditStep = { i -> vm.editChainStep(i); screen = Screen.TOOLFORM },
-                    onSaveDef = vm::saveChainDef,
-                )
             } else {
-                LaunchedEffect(Unit) { if (dashboard.info == null) vm.refresh() }
-                DashboardScreen(
-                    state = dashboard,
-                    submitForm = submitForm,
-                    onRefresh = vm::refresh,
-                    onStopBridge = vm::stopBridge,
-                    onRerunWizard = vm::resetWizard,
-                    onJobClick = vm::selectJob,
-                    onOpenSubmit = vm::clearSubmitErrors,
-                    onDismissSubmit = vm::clearSubmitErrors,
-                    onSubmitName = vm::editName,
-                    onSubmitArgv = vm::editArgvText,
-                    onSubmitCwd = vm::editCwd,
-                    onSubmitTimeout = vm::editTimeout,
-                    onSubmitJob = vm::submitJob,
-                    onOpenFiles = {
-                        vm.clearFilesNotice()
-                        screen = Screen.FILES
+                // ---- main shell: bottom navigation (Phase 9.5) -----------
+                BackHandler(enabled = screen != Screen.DASHBOARD) { screen = Screen.DASHBOARD }
+                Scaffold(
+                    bottomBar = {
+                        NavigationBar {
+                            NavigationBarItem(
+                                selected = screen == Screen.DASHBOARD,
+                                onClick = { screen = Screen.DASHBOARD },
+                                icon = { Text("▣") },
+                                label = { Text("Home") })
+                            NavigationBarItem(
+                                selected = screen == Screen.FILES,
+                                onClick = {
+                                    vm.clearFilesNotice()
+                                    screen = Screen.FILES
+                                },
+                                icon = { Text("📁") },
+                                label = { Text("Files") })
+                            NavigationBarItem(
+                                selected = screen == Screen.TOOLBOX,
+                                onClick = { screen = Screen.TOOLBOX },
+                                icon = { Text("🧰") },
+                                label = { Text("Tools") })
+                            NavigationBarItem(
+                                selected = screen == Screen.CHAINS,
+                                onClick = { screen = Screen.CHAINS },
+                                icon = { Text("⛓") },
+                                label = { Text("Chains") })
+                        }
                     },
-                    onOpenTools = {
-                        screen = Screen.TOOLBOX
-                    },
-                )
+                ) { padding ->
+                    androidx.compose.foundation.layout.Column(
+                        modifier = androidx.compose.ui.Modifier
+                            .androidx.compose.foundation.layout.fillMaxSize()
+                    ) {}
+                    when (screen) {
+                        Screen.FILES -> {
+                            // Back walks up the directory tree first; the tab
+                            // bar handles leaving (BackHandler above → Home).
+                            androidx.activity.compose.BackHandler {
+                                if (!vm.filesUp()) screen = Screen.DASHBOARD
+                            }
+                            LaunchedEffect(Unit) {
+                                if (filesState.entries.isEmpty()) vm.openPath(filesState.path)
+                            }
+                            val pickArg = toolFormState.pathArg
+                            FilesScreen(
+                                state = filesState,
+                                onOpenPath = vm::openPath,
+                                onUp = { vm.filesUp() },
+                                onRefresh = vm::refreshFiles,
+                                onMakeDir = vm::makeDir,
+                                onRename = vm::renameEntry,
+                                onDelete = vm::deleteEntry,
+                                onDownload = vm::downloadEntry,
+                                onUpload = vm::uploadFromUri,
+                                onOpenFile = { vm.openEntry(it, false) },
+                                onShareFile = { vm.openEntry(it, true) },
+                                pickFile = pickArg?.let { arg ->
+                                    toolFormState.schema?.args
+                                        ?.firstOrNull { it.name == arg }
+                                        ?.let { it.path_kind != "dir" }
+                                },
+                                onPicked = { path -> vm.pathPicked(path) },
+                                onCancelPick = { vm.cancelPathPick() },
+                                modifier = androidx.compose.ui.Modifier.padding(padding),
+                            )
+                        }
+                        Screen.TOOLBOX -> {
+                            LaunchedEffect(Unit) { vm.loadTools() }
+                            ToolboxScreen(
+                                state = toolsState,
+                                recipes = recipes,
+                                onRefresh = vm::refreshToolsNow,
+                                onOpenTool = { toolId ->
+                                    vm.openToolForm(toolId)
+                                },
+                                onInstall = vm::installTool,
+                                onOpenRecipe = { id -> vm.openRecipe(id) },
+                                onDeleteRecipe = vm::deleteRecipe,
+                                onShareRecipe = vm::shareRecipe,
+                                onImportRecipe = vm::importRecipe,
+                                onOpenChains = { screen = Screen.CHAINS },
+                                modifier = androidx.compose.ui.Modifier.padding(padding),
+                            )
+                        }
+                        Screen.CHAINS -> {
+                            ChainsScreen(
+                                state = chainsState,
+                                tools = toolsState.tools,
+                                jobs = dashboard.jobs,
+                                onNew = vm::newChainBuilder,
+                                onEditDef = vm::editChainDef,
+                                onDeleteDef = vm::deleteChainDef,
+                                onRun = vm::runChain,
+                                onResume = vm::resumeChain,
+                                onStopRun = vm::stopChainRun,
+                                onSetTitle = vm::setChainTitle,
+                                onAddStep = vm::addChainStep,
+                                onRemoveStep = vm::removeChainStep,
+                                onEditStep = { i -> vm.editChainStep(i) },
+                                onSaveDef = vm::saveChainDef,
+                                modifier = androidx.compose.ui.Modifier.padding(padding),
+                            )
+                        }
+                        Screen.DASHBOARD -> {
+                            LaunchedEffect(Unit) { if (dashboard.info == null) vm.refresh() }
+                            DashboardScreen(
+                                state = dashboard,
+                                submitForm = submitForm,
+                                onRefresh = vm::refresh,
+                                onStopBridge = vm::stopBridge,
+                                onRerunWizard = vm::resetWizard,
+                                onJobClick = vm::selectJob,
+                                onOpenSubmit = vm::clearSubmitErrors,
+                                onDismissSubmit = vm::clearSubmitErrors,
+                                onSubmitName = vm::editName,
+                                onSubmitArgv = vm::editArgvText,
+                                onSubmitCwd = vm::editCwd,
+                                onSubmitTimeout = vm::editTimeout,
+                                onSubmitJob = vm::submitJob,
+                                modifier = androidx.compose.ui.Modifier.padding(padding),
+                            )
+                        }
+                    }
+                }
             }
         }
     }
-
 }

@@ -28,7 +28,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -36,16 +35,6 @@ import androidx.compose.ui.unit.sp
 import dev.trmx.gui.DashboardState
 import dev.trmx.gui.SubmitFormState
 import dev.trmx.gui.model.JobSummary
-
-private val STATUS_COLORS = mapOf(
-    "RUNNING" to Color(0xFF4CAF50),
-    "QUEUED" to Color(0xFFFFC107),
-    "CANCELLING" to Color(0xFFFF9800),
-    "COMPLETED" to Color(0xFF2196F3),
-    "FAILED" to Color(0xFFF44336),
-    "CANCELLED" to Color(0xFF9E9E9E),
-    "LOST" to Color(0xFFFF9800),
-)
 
 @Composable
 fun DashboardScreen(
@@ -62,17 +51,16 @@ fun DashboardScreen(
     onSubmitCwd: (String) -> Unit,
     onSubmitTimeout: (String) -> Unit,
     onSubmitJob: () -> Unit,
-    onOpenFiles: () -> Unit,
-    onOpenTools: () -> Unit = {},
+    modifier: Modifier = Modifier,
 ) {
     var showSubmit by remember { mutableStateOf(false) }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .padding(Sp.m),
+        verticalArrangement = Arrangement.spacedBy(Sp.l - Sp.xs),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("TRMX", fontSize = 32.sp, fontWeight = FontWeight.Bold)
@@ -80,7 +68,7 @@ fun DashboardScreen(
             val connected = state.error == null
             Text(
                 if (connected) "● connected" else "● connection error",
-                color = if (connected) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error)
+                color = if (connected) TrmxColors.Running else MaterialTheme.colorScheme.error)
             Spacer(Modifier.weight(1f))
             Button(onClick = { onOpenSubmit(); showSubmit = true }) { Text("+ New job") }
         }
@@ -101,12 +89,10 @@ fun DashboardScreen(
 
         JobsCard(state.jobs, onJobClick)
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Sp.s)) {
             Button(onClick = onRefresh, enabled = !state.refreshing) {
                 Text(if (state.refreshing) "Refreshing…" else "Refresh")
             }
-            Button(onClick = onOpenFiles) { Text("Files") }
-            Button(onClick = onOpenTools) { Text("Tools") }
             OutlinedButton(onClick = onRerunWizard) { Text("Re-run setup") }
             OutlinedButton(onClick = onStopBridge) { Text("Stop bridge") }
         }
@@ -196,7 +182,7 @@ private fun JobsCard(jobs: List<JobSummary>, onJobClick: (String) -> Unit) {
                              modifier = Modifier.width(80.dp))
                         Text(
                             job.status,
-                            color = STATUS_COLORS[job.status] ?: Color.Gray,
+                            color = TrmxColors.status(job.status),
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.width(110.dp))
                         Text(job.name.ifEmpty { job.argv?.joinToString(" ").orEmpty() },
