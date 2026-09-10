@@ -639,7 +639,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     _files.update {
                         it.copy(opPending = false, transfer = null,
                                 pendingOpen = PendingOpen(
-                                    dest.absolutePath, FileMime.of(entry.name), share))
+                                    dest.absolutePath, FileMime.of(name), share))
                     }
                 is BridgeResult.HttpError ->
                     _files.update { it.copy(opPending = false, transfer = null,
@@ -870,12 +870,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 is BridgeResult.Success -> r.data
                 else -> return@launch
             }
-            if (job.type != "tool" || job.tool == null || job.status != "COMPLETED") return
+            if (job.type != "tool" || job.tool == null || job.status != "COMPLETED") return@launch
             val schema = _tools.value.tools.firstOrNull { it.schema.id == job.tool }?.schema
             val meta = toolJobMeta[jobId]
                 ?: (schema?.let { Artifacts.metaFor(it, emptyMap()) })   // post-restart fallback
-                ?: return
-            if (meta.outputs.isEmpty() && meta.outdir == null) return
+                ?: return@launch
+            if (meta.outputs.isEmpty() && meta.outdir == null) return@launch
             _artifacts.update { it.copy(jobId = jobId, loading = true, error = null) }
             var listing: List<FileEntry>? = null
             if (meta.outdir != null) {

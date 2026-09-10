@@ -178,7 +178,6 @@ private fun KV(k: String, v: String) {
 }
 
 @Composable
-@Composable
 private fun ArtifactsCard(
     state: ArtifactsState,
     onOpenArtifact: (Artifact, Boolean) -> Unit,

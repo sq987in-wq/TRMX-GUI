@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Modifier
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -209,15 +210,11 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                         }
                     },
                 ) { padding ->
-                    androidx.compose.foundation.layout.Column(
-                        modifier = androidx.compose.ui.Modifier
-                            .androidx.compose.foundation.layout.fillMaxSize()
-                    ) {}
                     when (screen) {
                         Screen.FILES -> {
                             // Back walks up the directory tree first; the tab
                             // bar handles leaving (BackHandler above → Home).
-                            androidx.activity.compose.BackHandler {
+                            BackHandler {
                                 if (!vm.filesUp()) screen = Screen.DASHBOARD
                             }
                             LaunchedEffect(Unit) {
@@ -243,7 +240,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                                 },
                                 onPicked = { path -> vm.pathPicked(path) },
                                 onCancelPick = { vm.cancelPathPick() },
-                                modifier = androidx.compose.ui.Modifier.padding(padding),
+                                modifier = Modifier.padding(padding),
                             )
                         }
                         Screen.TOOLBOX -> {
@@ -261,7 +258,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                                 onShareRecipe = vm::shareRecipe,
                                 onImportRecipe = vm::importRecipe,
                                 onOpenChains = { screen = Screen.CHAINS },
-                                modifier = androidx.compose.ui.Modifier.padding(padding),
+                                modifier = Modifier.padding(padding),
                             )
                         }
                         Screen.CHAINS -> {
@@ -280,7 +277,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                                 onRemoveStep = vm::removeChainStep,
                                 onEditStep = { i -> vm.editChainStep(i) },
                                 onSaveDef = vm::saveChainDef,
-                                modifier = androidx.compose.ui.Modifier.padding(padding),
+                                modifier = Modifier.padding(padding),
                             )
                         }
                         Screen.DASHBOARD -> {
@@ -299,7 +296,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                                 onSubmitCwd = vm::editCwd,
                                 onSubmitTimeout = vm::editTimeout,
                                 onSubmitJob = vm::submitJob,
-                                modifier = androidx.compose.ui.Modifier.padding(padding),
+                                modifier = Modifier.padding(padding),
                             )
                         }
                     }

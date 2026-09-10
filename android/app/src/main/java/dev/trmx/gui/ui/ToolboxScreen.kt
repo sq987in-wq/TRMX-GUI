@@ -183,7 +183,7 @@ private fun ToolCard(t: ToolStatus, onOpenTool: (String) -> Unit, onInstall: () 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (t.installed) {
                     Text("✓ ${t.version ?: "installed"}",
-                         color = Color(0xFF4CAF50),
+                         color = TrmxColors.Running,
                          style = MaterialTheme.typography.bodySmall)
                 } else {
                     Text("✗ not installed",
