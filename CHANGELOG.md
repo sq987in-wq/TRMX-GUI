@@ -6,6 +6,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Changed — universal runtime: broadened bundled tools + fully generic progress engine (bridge v0.4.1, 2026-09-10)
+- Framing made explicit: TRMX-GUI is a **Universal Linux Runtime & Visual
+  Control Plane for Android** — the media trio was a showcase, never the
+  ceiling. Bundled schemas now span four more categories: VCS (`git-clone`),
+  scripting/AI (`python-run`), system/network (`http-server`), system
+  utility (`tar-backup`) — alongside yt-dlp/ffmpeg/aria2c.
+- Progress engine is fully generic (§7.2 semantics, zero download
+  hardcoding): parses stdout **and** stderr (git/ffmpeg report progress on
+  stderr), treats `\r` as a line break (progress bars), parses a final
+  unterminated line, and non-numeric capture groups (port bindings,
+  key=value metrics) update `progress_detail` without inventing a percent.
+- `POST /v1/tools/refresh` now **reloads schema files** — a schema dropped
+  into `~/.trmx/tools/` appears after a refresh, no bridge restart needed
+  (also the hook an AI schema-builder will use).
+- Tests: `test_tools` 14 → 17 (stderr+CR progress via a fake git, port-line
+  detail-only, refresh reload); full Termux suite 66/66.
+
+
 ### Added — Phase 9: Tool Registry, dynamic forms, recipes, shortcuts & chains (2026-09-09)
 - **Bridge v0.4.0 — PROTOCOL §7 implemented** (frozen since Phase 1):
   `GET /v1/tools[/{id}]` + `POST /v1/tools/refresh` (probe via

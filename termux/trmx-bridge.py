@@ -55,7 +55,7 @@ from collections import deque
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 PROTOCOL_VERSIONS = [1]
 
 LOG = logging.getLogger("trmx-bridge")
@@ -471,6 +471,80 @@ class Policy:
 
 
 BUNDLED_TOOL_SCHEMAS: list[dict] = [
+    # ---- developer / VCS -------------------------------------------------
+    {
+        "id": "git-clone",
+        "name": "Git Clone (VCS)",
+        "description": "Clone a repository into a new directory.",
+        "binary": "git",
+        "pkg": "git",
+        "risk_tier": "confirm",          # fetching + hooks = real code from elsewhere
+        "progress_regex": r"Receiving objects:\s+(\d+)%",
+        "fixed_argv": ["clone", "--progress"],
+        "args": [
+            {"name": "url", "label": "Repository URL", "type": "url", "required": True,
+             "help": "https:// or git:// URL to clone."},
+            {"name": "dir", "label": "Target directory", "type": "path", "required": False,
+             "help": "Where to clone (created if missing); defaults to the repo name."},
+        ],
+        "examples": [
+            {"label": "Clone a public repo",
+             "args": {"url": "https://github.com/octocat/Hello-World"}},
+        ],
+    },
+    # ---- scripting / AI ----------------------------------------------------
+    {
+        "id": "python-run",
+        "name": "Python Runner (scripting & AI)",
+        "description": "Run a Python script — utilities, data processing, local model calls, anything.",
+        "binary": "python",
+        "risk_tier": "confirm",          # arbitrary code execution, by design
+        "fixed_argv": [],
+        "args": [
+            {"name": "script", "label": "Script file", "type": "path", "path_kind": "file",
+             "required": True, "help": "The .py file to run (pick it in the file browser)."},
+            {"name": "arg", "label": "Script argument", "type": "string", "required": False,
+             "help": "Optional single argument passed to the script."},
+        ],
+        "examples": [],
+    },
+    # ---- system / network --------------------------------------------------
+    {
+        "id": "http-server",
+        "name": "Local HTTP Server",
+        "description": "Serve a folder over HTTP on the phone. Runs until stopped — cancel the job to stop the server.",
+        "binary": "python",
+        "risk_tier": "safe",
+        "progress_regex": r"(Serving HTTP on .+ port \d+)",   # port-binding line → detail
+        "fixed_argv": ["-m", "http.server"],
+        "args": [
+            {"name": "port", "label": "Port", "type": "int", "min": 1024, "max": 65535,
+             "default": 8000, "required": False},
+            {"name": "dir", "label": "Folder to serve", "type": "path", "path_kind": "dir",
+             "default": "~", "required": False},
+        ],
+        "examples": [
+            {"label": "Serve home on 8000", "args": {"port": 8000, "dir": "~"}},
+        ],
+    },
+    # ---- system utility ------------------------------------------------------
+    {
+        "id": "tar-backup",
+        "name": "Archive / Backup (tar.gz)",
+        "description": "Create a compressed .tar.gz archive of a file or folder.",
+        "binary": "tar",
+        "pkg": "tar",
+        "risk_tier": "confirm",          # overwrites the archive target
+        "fixed_argv": ["-czf"],
+        "args": [
+            {"name": "archive", "label": "Archive file (.tar.gz)", "type": "path",
+             "required": True, "help": "Output archive — created/overwritten."},
+            {"name": "source", "label": "What to archive", "type": "path",
+             "required": True, "help": "File or folder to pack."},
+        ],
+        "examples": [],
+    },
+    # ---- media (kept: real, heavily used tools — but no longer the whole story)
     # yt-dlp: VERBATIM the frozen normative fixture (fixtures/v1/tool.schema.yt-dlp.json)
     {
         "id": "yt-dlp",
@@ -669,6 +743,10 @@ class ToolRegistry:
         return self.list_status()
 
     async def refresh(self) -> list[dict]:
+        # re-read bundled + user schema files first: a schema dropped into
+        # ~/.trmx/tools/ (by hand, or by an AI schema builder) appears after
+        # a refresh — no bridge restart needed (ADR-009 addendum).
+        self._load()
         for tid in sorted(self.schemas):
             await self._probe_one(tid)
         return self.list_status()
@@ -1035,9 +1113,12 @@ class JobManager:
         if rt is None:
             return
         dec = codecs.getincrementaldecoder("utf-8")("replace")
-        # §7.2 progress: parse COMPLETE stdout lines against the tool's
-        # progress_regex; update the job + emit job.updated on change.
-        on_line = self._progress_parser(job_id) if kind == "stdout" else None
+        # §7.2 progress: parse COMPLETE lines (stdout AND stderr — git/ffmpeg
+        # report progress on stderr) against the tool's progress_regex; update
+        # the job + emit job.updated on change. \r counts as a line break:
+        # progress bars (wget/git style) overwrite the line with carriage
+        # returns and would otherwise never produce a "complete" line.
+        on_line = self._progress_parser(job_id)
         buf = ""
         try:
             while True:
@@ -1052,13 +1133,18 @@ class JobManager:
                 if text:
                     self._emit(job_id, kind, {"job_id": job_id, "text": text})
                     if on_line is not None:
-                        buf += text
+                        buf += text.replace("\r", "\n")
                         *lines, buf = buf.split("\n")
                         for ln in lines:
                             on_line(ln)
             tail = dec.decode(b"", final=True)
             if tail:
                 self._emit(job_id, kind, {"job_id": job_id, "text": tail})
+                if on_line is not None:
+                    # a final line without a trailing newline still counts
+                    for ln in (buf + tail.replace("\r", "\n")).split("\n"):
+                        on_line(ln)
+                    buf = ""
         except Exception:  # noqa: BLE001
             LOG.exception("output pump failed for %s", job_id)
 
@@ -1078,19 +1164,21 @@ class JobManager:
             m = rx.search(line)
             if not m:
                 return
+            # numeric first group -> percent; non-numeric (a port-binding or
+            # key=value line) -> detail-only update, pct untouched (§7.2: the
+            # matched line populates progress_detail regardless)
             try:
-                pct = float(m.group(1))
+                pct = min(max(float(m.group(1)), 0.0), 100.0)
             except (IndexError, ValueError):
-                return
-            pct = min(max(pct, 0.0), 100.0)
+                pct = None
             detail = line.strip()[:200]
-            if state["pct"] is not None and abs(pct - state["pct"]) < 0.05 \
-                    and detail == state["detail"]:
+            if pct == state["pct"] and detail == state["detail"]:
                 return
             state["pct"], state["detail"] = pct, detail
             current = self.store.get_job(job_id)
             if current and current.get("status") == "RUNNING":
-                current["progress_pct"] = round(pct, 1)
+                if pct is not None:
+                    current["progress_pct"] = round(pct, 1)
                 current["progress_detail"] = detail
                 self.store.save_job(current)
                 self._emit_status(current)

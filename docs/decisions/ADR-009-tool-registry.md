@@ -90,3 +90,13 @@ progress parsing end-to-end (fake tool emits yt-dlp-style lines → 100.0% +
 detail), tier audit, user-over-bundled merge + malformed schema reporting,
 fixture key conformance. App: `ToolsWireTest` (4, incl. byte-identical tool
 submit fixture), `FormEngineTest` (4). Suite totals: termux 63/63.
+
+## Addendum (2026-09-10, bridge v0.4.1)
+
+Broadened per the universal-runtime framing: bundled schemas now span VCS /
+scripting / network-service / archive categories (`git-clone`, `python-run`,
+`http-server`, `tar-backup`) in addition to the media trio. The engine stays
+category-agnostic: progress parsing covers both streams, CR-overwritten
+progress bars, and detail-only matches (port bindings, key=value lines);
+`POST /v1/tools/refresh` reloads schema files, so drop-in schemas
+(hand-written or LLM-generated) appear without a bridge restart.

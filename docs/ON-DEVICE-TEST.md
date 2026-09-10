@@ -234,9 +234,9 @@ transfer itself failed.
 
 # Phase 9 round — Tool Registry, dynamic forms, recipes & chains (2026-09-09)
 
-**Build:** CI green on the Phase 9 commit (bridge **v0.4.0**, app with
-Toolbox/forms/recipes/chains). **Both planes change** — update the APK *and*
-the bridge (same sequence as Phase 7):
+**Build:** CI green on the Phase 9 commits (bridge **v0.4.1** — universal
+runtime broadening, app with Toolbox/forms/recipes/chains). **Both planes
+change** — update the APK *and* the bridge (same sequence as Phase 7):
 
 1. **App:** latest green run → `trmx-debug-apk` → install in place.
 2. **Bridge:** dashboard → **Re-run setup** (idempotent installer, base URL
@@ -249,7 +249,7 @@ the bridge (same sequence as Phase 7):
 
 | # | Action | Expected |
 |---|--------|----------|
-| 1 | Dashboard → **Tools** | Toolbox loads: cards for yt-dlp / ffmpeg / aria2c with ✓/✗, version lines, tier badges |
+| 1 | Dashboard → **Tools** | Toolbox loads: cards across categories — git-clone, python-run, http-server, tar-backup, yt-dlp, ffmpeg, aria2c — with ✓/✗, version lines, tier badges |
 | 2 | **scan ⟳** | rescan notice; tools you installed in Termux show ✓ |
 | 3 | Tap a ✗ card → **install** → confirm | runs `pkg install -y …` as a job (live console in job detail); when it finishes the toolbox rescans and the card flips ✓ |
 | 4 | yt-dlp card → fill **Video URL** (any small public video) → 📁 pick `~/downloads` → **RUN ▶** | job submitted; dashboard row shows a **live % bar**; detail console shows `[download] …%` lines; file lands in `~/downloads` (check in Files) |

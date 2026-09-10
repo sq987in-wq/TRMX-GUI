@@ -1,11 +1,18 @@
 # TRMX-GUI
 
-**A native Android graphical remote-control dashboard for [Termux](https://termux.dev).**
+**A Universal Linux Runtime & Visual Control Plane for Android.**
 
-> The Android app is a beautiful control plane. **Termux is the execution engine.**
-> `Android UI → control/communication layer → Termux → shell · Python · CLI tools · media · automation · AI agents`
+> The Android app is a clean control plane. **Termux is the execution engine — a
+> complete Linux userspace living on the phone.**
+> `Android UI → control/communication layer → Termux → shell · Python · git · servers · archives · CLI tools · AI agents · media`
 
-TRMX-GUI does not replace Termux — it drives it: run and monitor jobs, stream live output, cancel processes, manage files, launch tools through generated GUIs, and automate recurring tasks, all without typing shell commands.
+TRMX-GUI does not replace Termux — it makes all of it operable without typing:
+run and monitor jobs with live output, manage files, clone repositories, run
+scripts and local models, serve folders over HTTP, archive and back up data —
+and launch **any** CLI tool through generated GUIs built from JSON schemas.
+Bundled showcase spans the categories (git-clone, python-run, http-server,
+tar-backup, yt-dlp, ffmpeg, aria2c); drop your own schema into
+`~/.trmx/tools/` and it becomes a first-class form — zero app changes.
 
 ## Project status
 

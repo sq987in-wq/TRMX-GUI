@@ -49,6 +49,26 @@ FAKETOOL_SCHEMA = {
     ],
 }
 
+FAKEGIT_SCHEMA = {
+    "id": "fakegit",
+    "name": "Fake Git",
+    "description": "git-style progress on STDERR with \\r overwrites",
+    "binary": "fakegit",
+    "risk_tier": "confirm",
+    "progress_regex": r"Receiving objects:\s+(\d+)%",
+    "args": [],
+}
+
+FAKESERVER_SCHEMA = {
+    "id": "fakeserver",
+    "name": "Fake Server",
+    "description": "prints a port-binding line, no percent",
+    "binary": "fakeserver",
+    "risk_tier": "safe",
+    "progress_regex": r"(Serving HTTP on .+ port \d+)",
+    "args": [],
+}
+
 FAKEPROG_SCHEMA = {
     "id": "fakeprog",
     "name": "Fake Progress",
@@ -82,6 +102,18 @@ class TestTools(unittest.TestCase):
         fake.write_text("#!/bin/sh\n"
                         'if [ "$1" = "--version" ]; then echo "faketool 1.2.3"; exit 0; fi\n'
                         'echo "argv: $@"\n')
+        fgit = cls.binroot / "fakegit"
+        fgit.write_text("#!/bin/sh\n"
+                        'if [ "$1" = "--version" ]; then echo "fakegit 2.43.0"; exit 0; fi\n'
+                        'printf "Receiving objects:  45%% (9/20)\\rReceiving objects: 100%% (20/20), done.\\n" >&2\n'
+                        'sleep 0.3\n'
+                        'echo "clone finished"\n')
+        fserver = cls.binroot / "fakeserver"
+        fserver.write_text("#!/bin/sh\n"
+                           'if [ "$1" = "--version" ]; then echo "fakeserver 3.11"; exit 0; fi\n'
+                           'echo "Serving HTTP on 0.0.0.0 port 8000 (http://0.0.0.0:8000/) ..."\n'
+                           "sleep 0.3\n"
+                           'echo "server done"\n')
         prog = cls.binroot / "fakeprog"
         prog.write_text("#!/bin/sh\n"
                         'echo "[download]   5.0% of 10.00MiB"\n'
@@ -90,7 +122,7 @@ class TestTools(unittest.TestCase):
                         "sleep 0.3\n"
                         'echo "[download] 100.0% of 10.00MiB"\n'
                         'echo "done"\n')
-        for f in (fake, prog):
+        for f in (fake, prog, fgit, fserver):
             f.chmod(f.stat().st_mode | stat.S_IXUSR)
         cls._old_path = os.environ["PATH"]
         os.environ["PATH"] = f"{cls.binroot}:{cls._old_path}"
@@ -100,6 +132,8 @@ class TestTools(unittest.TestCase):
         (Path(cls.home) / "tools" / "c-ghost.json").write_text(json.dumps(
             {"id": "ghosttool", "name": "ghost", "binary": "no-such-binary-xyz",
              "args": []}))
+        (Path(cls.home) / "tools" / "d-git.json").write_text(json.dumps(FAKEGIT_SCHEMA))
+        (Path(cls.home) / "tools" / "e-server.json").write_text(json.dumps(FAKESERVER_SCHEMA))
         # output dir fixture under the real home
         cls.outdir_abs = Path(tempfile.mkdtemp(prefix="trmx-tools-out-", dir=str(Path.home())))
         cls.port = free_port()
@@ -158,8 +192,9 @@ class TestTools(unittest.TestCase):
         status, _, raw = self.http("GET", "/v1/tools")
         self.assertEqual(status, 200, raw)
         tools = {t["schema"]["id"]: t for t in json.loads(raw)["tools"]}
-        # bundled three + two user schemas
-        for tid in ("yt-dlp", "ffmpeg", "aria2c", "faketool", "fakeprog"):
+        # bundled seven (media trio + git/python/http-server/tar) + user schemas
+        for tid in ("yt-dlp", "ffmpeg", "aria2c", "git-clone", "python-run",
+                    "http-server", "tar-backup", "faketool", "fakeprog"):
             self.assertIn(tid, tools)
         self.assertIn("installed", tools["faketool"])
         self.assertIn("version", tools["faketool"])
@@ -187,7 +222,8 @@ class TestTools(unittest.TestCase):
         status, _, raw = self.http("POST", "/v1/tools/refresh", body={})
         self.assertEqual(status, 200, raw)
         tools = json.loads(raw)["tools"]
-        self.assertEqual(len(tools), 6)
+        # 7 bundled + 5 user (faketool, fakeprog, ghosttool, fakegit, fakeserver)
+        self.assertEqual(len(tools), 12)
 
     # ---- §7.2 submit: synthesis -------------------------------------------
 
@@ -278,6 +314,46 @@ class TestTools(unittest.TestCase):
         self.assertEqual(done["status"], "COMPLETED", done)
         self.assertEqual(done["progress_pct"], 100.0, done)
         self.assertIn("100.0%", done["progress_detail"], done)
+
+    def test_16b_stderr_progress_and_cr_lines(self):
+        """git-style tools report progress on stderr with \\r overwrites —
+        the generic parser must see the FINAL value."""
+        status, job = self.submit({"name": "git", "type": "tool", "tool": "fakegit",
+                                   "args": {}})
+        self.assertEqual(status, 201, job)
+        done = self.wait_job(job["job_id"])
+        self.assertEqual(done["status"], "COMPLETED", done)
+        self.assertEqual(done["progress_pct"], 100.0, done)
+        self.assertIn("100%", done["progress_detail"], done)
+
+    def test_16c_port_binding_line_becomes_detail_only(self):
+        """Non-numeric capture groups (port bindings, key=value metrics)
+        update progress_detail without inventing a percent."""
+        status, job = self.submit({"name": "srv", "type": "tool", "tool": "fakeserver",
+                                   "args": {}})
+        self.assertEqual(status, 201, job)
+        done = self.wait_job(job["job_id"])
+        self.assertEqual(done["status"], "COMPLETED", done)
+        self.assertIsNone(done["progress_pct"], done)
+        self.assertIn("port 8000", done["progress_detail"], done)
+
+    def test_18_refresh_reloads_schema_files(self):
+        """A schema dropped into ~/.trmx/tools/ appears after refresh — no
+        bridge restart (the drop-in / AI-schema-builder hook)."""
+        tools_dir = Path(self.home) / "tools"
+        (tools_dir / "f-late.json").write_text(json.dumps(
+            {"id": "late-tool", "name": "Late", "binary": "no-such-bin-late",
+             "args": []}))
+        try:
+            status, _, raw = self.http("POST", "/v1/tools/refresh", body={})
+            self.assertEqual(status, 200, raw)
+            ids = {t["schema"]["id"] for t in json.loads(raw)["tools"]}
+            self.assertIn("late-tool", ids)
+        finally:
+            (tools_dir / "f-late.json").unlink()
+        status, _, raw = self.http("POST", "/v1/tools/refresh", body={})
+        ids = {t["schema"]["id"] for t in json.loads(raw)["tools"]}
+        self.assertNotIn("late-tool", ids)
 
     def test_17_tier_audited(self):
         status, job = self.submit({"name": "audit", "type": "tool", "tool": "faketool",
