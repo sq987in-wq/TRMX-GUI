@@ -46,6 +46,7 @@ import dev.trmx.gui.ArtifactsState
 import dev.trmx.gui.JobDetailState
 import dev.trmx.gui.job.JobOutputState
 import dev.trmx.gui.tools.Artifact
+import dev.trmx.gui.tools.JobLabels
 
 private val ACTIVE = setOf("QUEUED", "RUNNING", "CANCELLING")
 
@@ -68,10 +69,18 @@ fun JobDetailScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Row {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(onClick = onBack) { Text("← Jobs") }
             Spacer(Modifier.width(12.dp))
-            Text("Job ${state.jobId}", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Column {
+                // Human label is the title (UX-audit P1); the J-ID is
+                // secondary, copyable metadata — still one tap away.
+                Text(
+                    state.job?.let { JobLabels.taskLabel(it) } ?: "Job",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold)
+                CopyableId(state.jobId)
+            }
         }
 
         val job = state.job
@@ -85,8 +94,10 @@ fun JobDetailScreen(
         if (job != null) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row {
-                        Text(job.name, fontWeight = FontWeight.Bold,
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(JobLabels.subtitle(job),
+                             style = MaterialTheme.typography.bodySmall,
+                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                              modifier = Modifier.weight(1f))
                         Text(
                             job.status,

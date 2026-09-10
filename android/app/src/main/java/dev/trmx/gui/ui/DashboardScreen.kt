@@ -1,10 +1,16 @@
 package dev.trmx.gui.ui
 
 /*
- * Dashboard: bridge status + system info + job list, manual refresh,
- * job submission (Phase 5). Live streaming output is Phase 6.
+ * Home = Command Center (UX-audit P1, ADR-012). Inverted hierarchy:
+ *   1. status pill (connected / N running / error) → opens Diagnostics
+ *   2. quick run — saved recipes, one tap to a filled form
+ *   3. tasks — human outcome labels (JobLabels), J-ID secondary copyable
+ * The bridge metrics dump, Refresh, Stop bridge and Re-run setup moved to
+ * the Diagnostics sheet; the manual argv dialog moved to the Toolbox
+ * ("Custom command"). The job list still updates via SSE events.
  */
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,195 +21,196 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.trmx.gui.DashboardState
-import dev.trmx.gui.SubmitFormState
 import dev.trmx.gui.model.JobSummary
+import dev.trmx.gui.store.Recipe
+import dev.trmx.gui.tools.JobLabels
 
 @Composable
 fun DashboardScreen(
     state: DashboardState,
-    submitForm: SubmitFormState,
-    onRefresh: () -> Unit,
-    onStopBridge: () -> Unit,
-    onRerunWizard: () -> Unit,
+    recipes: List<Recipe>,
+    onOpenDiagnostics: () -> Unit,
     onJobClick: (String) -> Unit,
-    onOpenSubmit: () -> Unit,
-    onDismissSubmit: () -> Unit,
-    onSubmitName: (String) -> Unit,
-    onSubmitArgv: (String) -> Unit,
-    onSubmitCwd: (String) -> Unit,
-    onSubmitTimeout: (String) -> Unit,
-    onSubmitJob: () -> Unit,
+    onOpenRecipe: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var showSubmit by remember { mutableStateOf(false) }
-
     Column(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(Sp.m),
-        verticalArrangement = Arrangement.spacedBy(Sp.l - Sp.xs),
+        verticalArrangement = Arrangement.spacedBy(Sp.m),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("TRMX", fontSize = 32.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.width(10.dp))
-            val connected = state.error == null
-            Text(
-                if (connected) "● connected" else "● connection error",
-                color = if (connected) TrmxColors.Running else MaterialTheme.colorScheme.error)
             Spacer(Modifier.weight(1f))
-            Button(onClick = { onOpenSubmit(); showSubmit = true }) { Text("+ New job") }
+            StatusPill(state, onOpenDiagnostics)
         }
 
-        state.notice?.let { Banner(it) }
-        state.error?.let { Banner(it, error = true) }
-
-        val info = state.info
-        if (info != null) {
-            InfoCard(info)
-        } else {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    if (state.refreshing) "loading bridge info…" else "no bridge info yet",
-                    modifier = Modifier.padding(14.dp))
-            }
+        state.notice?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall,
+                 color = MaterialTheme.colorScheme.primary)
+        }
+        state.error?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall,
+                 color = MaterialTheme.colorScheme.error)
         }
 
-        JobsCard(state.jobs, onJobClick)
-
-        Row(horizontalArrangement = Arrangement.spacedBy(Sp.s)) {
-            Button(onClick = onRefresh, enabled = !state.refreshing) {
-                Text(if (state.refreshing) "Refreshing…" else "Refresh")
-            }
-            OutlinedButton(onClick = onRerunWizard) { Text("Re-run setup") }
-            OutlinedButton(onClick = onStopBridge) { Text("Stop bridge") }
+        if (recipes.isNotEmpty()) {
+            QuickRunCard(recipes, onOpenRecipe)
         }
-        Text(
-            "Everything runs on the phone: jobs + live output, file manager " +
-                "with open/share, all through the local bridge (TRMX-P/1).",
-            style = MaterialTheme.typography.bodySmall)
+
+        TasksCard(state.jobs, onJobClick)
     }
+}
 
-    if (showSubmit) {
-        SubmitDialog(
-            state = submitForm,
-            onName = onSubmitName,
-            onArgv = onSubmitArgv,
-            onCwd = onSubmitCwd,
-            onTimeout = onSubmitTimeout,
-            onSubmit = onSubmitJob,
-            onDismiss = {
-                showSubmit = false
-                onDismissSubmit()
-            },
+/** Compact health surface; tap opens the Diagnostics sheet. */
+@Composable
+private fun StatusPill(state: DashboardState, onOpenDiagnostics: () -> Unit) {
+    val connected = state.error == null
+    val running = state.info?.load?.jobs_running ?: 0
+    val (label, color) = when {
+        !connected -> "● connection error" to MaterialTheme.colorScheme.error
+        state.refreshing -> "○ refreshing" to TrmxColors.Running
+        running > 0 -> "● $running running" to TrmxColors.Running
+        else -> "● connected" to TrmxColors.Completed
+    }
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        border = BorderStroke(1.dp, color.copy(alpha = 0.45f)),
+        modifier = Modifier.clickable(onClick = onOpenDiagnostics),
+    ) {
+        Text(
+            "$label  ⚙",
+            color = color,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
         )
     }
 }
 
+/** Saved recipes: the fastest path from goal to filled form. */
 @Composable
-private fun Banner(text: String, error: Boolean = false) {
+private fun QuickRunCard(recipes: List<Recipe>, onOpenRecipe: (String) -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text,
-            modifier = Modifier.padding(12.dp),
-            color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+        Column(
+            modifier = Modifier.padding(Sp.m),
+            verticalArrangement = Arrangement.spacedBy(Sp.s),
+        ) {
+            Text("Quick run", fontWeight = FontWeight.Bold)
+            recipes.take(4).forEach { r ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenRecipe(r.id) },
+                ) {
+                    Text("▸", color = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(Sp.s))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(r.title, style = MaterialTheme.typography.bodyLarge,
+                             maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(r.toolId, style = MaterialTheme.typography.bodySmall,
+                             color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
     }
 }
 
+/** Tasks: human label first, status verb, relative time, J-ID copyable. */
 @Composable
-private fun InfoCard(info: dev.trmx.gui.model.SystemInfo) {
+private fun TasksCard(jobs: List<JobSummary>, onJobClick: (String) -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Bridge", fontWeight = FontWeight.Bold)
-            KeyValue("version", info.bridge_version)
-            KeyValue("protocol", info.protocol_versions.joinToString(", "))
-            KeyValue("uptime", "${info.uptime_s / 60} min")
-            info.load?.let {
-                KeyValue("jobs", "running ${it.jobs_running} · queued ${it.jobs_queued}")
+        Column(
+            modifier = Modifier.padding(Sp.m),
+            verticalArrangement = Arrangement.spacedBy(Sp.s),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Tasks", fontWeight = FontWeight.Bold)
+                Spacer(Modifier.weight(1f))
+                Text("${jobs.size}",
+                     style = MaterialTheme.typography.bodySmall,
+                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            info.memory?.let {
-                KeyValue("memory", "free ${it.free_mb} / ${it.total_mb} MB")
+            if (jobs.isEmpty()) {
+                Text(
+                    "Nothing has run yet — open Tools and pick one.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            info.storage?.let {
-                KeyValue("home storage", "free ${it.home_free_mb} MB")
-            }
-            info.caps?.let {
-                KeyValue("limits", "concurrency ${it.max_concurrent_jobs} · queue ${it.queue_depth}")
-            }
-            info.termux?.prefix?.let { KeyValue("termux prefix", it) }
+            jobs.take(20).forEach { job -> TaskRow(job, onJobClick) }
         }
     }
 }
 
 @Composable
-private fun KeyValue(k: String, v: String) {
-    Row {
-        Text(k, fontFamily = FontFamily.Monospace,
-             modifier = Modifier.width(130.dp), color = MaterialTheme.colorScheme.secondary)
-        Text(v, fontFamily = FontFamily.Monospace)
-    }
-}
-
-@Composable
-private fun JobsCard(jobs: List<JobSummary>, onJobClick: (String) -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Jobs (${jobs.size}) — tap for details", fontWeight = FontWeight.Bold)
-            if (jobs.isEmpty()) {
-                Text("No jobs yet — submit one with “+ New job”.",
-                     style = MaterialTheme.typography.bodyMedium)
+private fun TaskRow(job: JobSummary, onJobClick: (String) -> Unit) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onJobClick(job.job_id) },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                JobLabels.taskLabel(job),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                JobLabels.statusVerb(job.status),
+                color = TrmxColors.status(job.status),
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                JobLabels.subtitle(job),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            CopyableId(job.job_id)
+        }
+        if (job.progress_pct != null) {
+            LinearProgressIndicator(
+                progress = { (job.progress_pct / 100.0).toFloat() },
+                modifier = Modifier.fillMaxWidth())
+            job.progress_detail?.let {
+                Text("  $it", fontFamily = FontFamily.Monospace, fontSize = 11.sp,
+                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            jobs.take(20).forEach { job ->
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onJobClick(job.job_id) }) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(job.job_id, fontFamily = FontFamily.Monospace,
-                             modifier = Modifier.width(80.dp))
-                        Text(
-                            job.status,
-                            color = TrmxColors.status(job.status),
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.width(110.dp))
-                        Text(job.name.ifEmpty { job.argv?.joinToString(" ").orEmpty() },
-                             style = MaterialTheme.typography.bodyMedium)
-                    }
-                    if (job.progress_pct != null) {
-                        androidx.compose.foundation.layout.Column {
-                            androidx.compose.material3.LinearProgressIndicator(
-                                progress = { (job.progress_pct / 100.0).toFloat() },
-                                modifier = Modifier.fillMaxWidth())
-                            Text("  ${job.progress_pct}% " +
-                                     (job.progress_detail ?: ""),
-                                 fontFamily = FontFamily.Monospace, fontSize = 11.sp,
-                                 color = MaterialTheme.colorScheme.secondary)
-                        }
-                    } else {
-                        job.progress_detail?.let {
-                            Text("  $it", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
-                        }
-                    }
-                }
+        } else {
+            job.progress_detail?.let {
+                Text("  $it", fontFamily = FontFamily.Monospace, fontSize = 11.sp,
+                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

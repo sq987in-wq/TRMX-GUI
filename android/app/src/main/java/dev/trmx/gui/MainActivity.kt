@@ -25,6 +25,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.trmx.gui.model.ToolExample
 import dev.trmx.gui.ui.ChainsScreen
 import dev.trmx.gui.ui.DashboardScreen
+import dev.trmx.gui.ui.DiagnosticsSheet
 import dev.trmx.gui.ui.FilesScreen
 import dev.trmx.gui.ui.JobDetailScreen
 import dev.trmx.gui.ui.ToolFormScreen
@@ -80,6 +81,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
     val artifactsState by vm.artifacts.collectAsStateWithLifecycle()
     val termuxInstalled = remember { vm.isTermuxInstalled() }
     var screen by remember { mutableStateOf(Screen.DASHBOARD) }
+    var showDiagnostics by remember { mutableStateOf(false) }
 
     // Cold-start recipe shortcut (set by MainActivity before composition).
     LaunchedEffect(Unit) {
@@ -248,6 +250,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                             ToolboxScreen(
                                 state = toolsState,
                                 recipes = recipes,
+                                submitForm = submitForm,
                                 onRefresh = vm::refreshToolsNow,
                                 onOpenTool = { toolId ->
                                     vm.openToolForm(toolId)
@@ -258,6 +261,12 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                                 onShareRecipe = vm::shareRecipe,
                                 onImportRecipe = vm::importRecipe,
                                 onOpenChains = { screen = Screen.CHAINS },
+                                onSubmitName = vm::editName,
+                                onSubmitArgv = vm::editArgvText,
+                                onSubmitCwd = vm::editCwd,
+                                onSubmitTimeout = vm::editTimeout,
+                                onSubmitJob = vm::submitJob,
+                                onDismissSubmit = vm::clearSubmitErrors,
                                 modifier = Modifier.padding(padding),
                             )
                         }
@@ -284,22 +293,25 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                             LaunchedEffect(Unit) { if (dashboard.info == null) vm.refresh() }
                             DashboardScreen(
                                 state = dashboard,
-                                submitForm = submitForm,
-                                onRefresh = vm::refresh,
-                                onStopBridge = vm::stopBridge,
-                                onRerunWizard = vm::resetWizard,
+                                recipes = recipes,
+                                onOpenDiagnostics = { showDiagnostics = true },
                                 onJobClick = vm::selectJob,
-                                onOpenSubmit = vm::clearSubmitErrors,
-                                onDismissSubmit = vm::clearSubmitErrors,
-                                onSubmitName = vm::editName,
-                                onSubmitArgv = vm::editArgvText,
-                                onSubmitCwd = vm::editCwd,
-                                onSubmitTimeout = vm::editTimeout,
-                                onSubmitJob = vm::submitJob,
+                                onOpenRecipe = { id -> vm.openRecipe(id) },
                                 modifier = Modifier.padding(padding),
                             )
                         }
                     }
+                }
+
+                // Deep bridge metrics + deliberate actions (UX-audit P1).
+                if (showDiagnostics) {
+                    DiagnosticsSheet(
+                        state = dashboard,
+                        onRefresh = vm::refresh,
+                        onStopBridge = vm::stopBridge,
+                        onRerunWizard = vm::resetWizard,
+                        onDismiss = { showDiagnostics = false },
+                    )
                 }
             }
         }

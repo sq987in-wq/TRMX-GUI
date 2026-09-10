@@ -46,6 +46,7 @@ import dev.trmx.gui.store.Recipe
 fun ToolboxScreen(
     state: dev.trmx.gui.ToolsState,
     recipes: List<Recipe>,
+    submitForm: dev.trmx.gui.SubmitFormState,
     onRefresh: () -> Unit,
     onOpenTool: (String) -> Unit,
     onInstall: (ToolStatus) -> Unit,
@@ -54,6 +55,12 @@ fun ToolboxScreen(
     onShareRecipe: (Recipe) -> Unit,
     onImportRecipe: (android.net.Uri) -> Unit,
     onOpenChains: () -> Unit,
+    onSubmitName: (String) -> Unit,
+    onSubmitArgv: (String) -> Unit,
+    onSubmitCwd: (String) -> Unit,
+    onSubmitTimeout: (String) -> Unit,
+    onSubmitJob: () -> Unit,
+    onDismissSubmit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -62,6 +69,9 @@ fun ToolboxScreen(
         if (uri != null) onImportRecipe(uri)
     }
     var confirmInstall by remember { mutableStateOf<ToolStatus?>(null) }
+    // Manual argv submission moved here from Home (UX-audit P1): it is an
+    // expert action, not a primary goal — argv-first stays (ADR-001).
+    var showSubmit by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -105,6 +115,20 @@ fun ToolboxScreen(
             Text("No tools — tap “scan ⟳”.", color = MaterialTheme.colorScheme.secondary)
         }
 
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showSubmit = true },
+        ) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("⚡ Custom command", fontWeight = FontWeight.Bold,
+                     style = MaterialTheme.typography.bodyLarge)
+                Text("Run any argv directly — one line, one argument. No shell.",
+                     style = MaterialTheme.typography.bodySmall,
+                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+
         state.tools.forEach { t -> ToolCard(t, onOpenTool) { confirmInstall = t } }
 
         // ---- recipes -----------------------------------------------------
@@ -144,6 +168,21 @@ fun ToolboxScreen(
         Button(onClick = onOpenChains, modifier = Modifier.fillMaxWidth()) {
             Text("⛓ Chains — visual pipelines")
         }
+    }
+
+    if (showSubmit) {
+        SubmitDialog(
+            state = submitForm,
+            onName = onSubmitName,
+            onArgv = onSubmitArgv,
+            onCwd = onSubmitCwd,
+            onTimeout = onSubmitTimeout,
+            onSubmit = onSubmitJob,
+            onDismiss = {
+                showSubmit = false
+                onDismissSubmit()
+            },
+        )
     }
 
     confirmInstall?.let { t ->
