@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -143,17 +144,22 @@ fun ToolFormScreen(
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(Sp.s),
-            verticalAlignment = Alignment.CenterVertically) {
-            if (state.submitting) {
-                CircularProgressIndicator(strokeWidth = 3.dp)
-            }
+        // Wraps instead of squeezing the last button (UX-audit P0).
+        ActionFlowRow {
             // Always enabled: a premature tap marks every field touched and
             // surfaces its validation error (Ph 9.5) instead of a dead button.
             Button(
                 onClick = { if (schema.risk_tier == "safe") onSubmit() else confirmRun = true },
                 enabled = !state.submitting && state.stepIndex == null,
             ) {
+                if (state.submitting) {
+                    CircularProgressIndicator(
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(14.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                    Spacer(Modifier.width(Sp.xs))
+                }
                 Text(if (schema.risk_tier == "safe") "RUN ▶" else "RUN ▶ (confirm)")
             }
             if (state.stepIndex == null) {
@@ -267,8 +273,7 @@ private fun Field(
                         value = current,
                         onValueChange = {
                             onEdit(a.name, FieldValue(text =
-                                if (a.type == "int") it.toInt().toString()
-                                else "%.2f".format(it)))
+                                FormEngine.sliderValueText(a.type, it)))
                         },
                         valueRange = min..max,
                         modifier = Modifier.weight(1f))

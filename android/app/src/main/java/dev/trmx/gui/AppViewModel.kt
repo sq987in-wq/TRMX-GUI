@@ -1111,7 +1111,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     error = "step ${i + 1}: tool '${step.toolId}' disappeared from the registry")) }
                 return
             }
-            val args = ChainPlanner.resolveArgs(step, prevOutput)
+            // Legacy defs saved before the native-number fix carry int/float
+            // args as strings; re-type them per the schema (UX-audit P0).
+            val args = FormEngine.coerceLegacyArgs(
+                schema, ChainPlanner.resolveArgs(step, prevOutput))
             val req = ToolSubmitRequest(
                 name = "${def.title} — ${ChainPlanner.stepTitle(step, schema)}",
                 tool = step.toolId, args = args, cwd = "~")

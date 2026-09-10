@@ -132,6 +132,11 @@ object FormEngine {
      * Only fields with effective values are sent (§7.2 wire shape: the
      * tool fixture carries just url/format/outdir). Bool false ≡ absent
      * (both contribute nothing bridge-side), so only `true` bools are sent.
+     *
+     * TYPING (UX-audit P0): int/float args go on the wire as NATIVE JSON
+     * numbers, not strings — §7.2 types them as numbers and the bridge's
+     * isinstance() validation rejects "23" for an int arg. This was the
+     * "must be an integer" bug on untouched slider defaults.
      */
     fun argsPayload(schema: ToolSchema, values: Map<String, FieldValue>): Map<String, JsonElement> {
         val out = mutableMapOf<String, JsonElement>()
@@ -140,11 +145,45 @@ object FormEngine {
             if (a.type == "bool") {
                 if (v.bool) out[a.name] = JsonPrimitive(true)
             } else if (!v.text.isBlank()) {
-                out[a.name] = JsonPrimitive(v.text)
+                out[a.name] = when (a.type) {
+                    "int" -> v.text.toIntOrNull()?.let { JsonPrimitive(it) } ?: JsonPrimitive(v.text)
+                    "float" -> v.text.toDoubleOrNull()?.let { JsonPrimitive(it) }
+                        ?: JsonPrimitive(v.text)
+                    else -> JsonPrimitive(v.text)
+                }
             }
         }
         return out
     }
+
+    /**
+     * Chain steps and recipes saved before the native-number fix carry
+     * int/float args as JSON strings ("23"); the bridge rejects those.
+     * Re-type string primitives that parse per the schema; everything else
+     * passes through untouched (unparseable values stay loud — the bridge
+     * rejects them, as it should).
+     */
+    fun coerceLegacyArgs(schema: ToolSchema, args: Map<String, JsonElement>): Map<String, JsonElement> {
+        val specs = schema.args.associateBy { it.name }
+        return args.mapValues { (k, v) ->
+            val a = specs[k] ?: return@mapValues v
+            if (v !is JsonPrimitive || !v.isString) return@mapValues v
+            when (a.type) {
+                "int" -> v.content.toIntOrNull()?.let { JsonPrimitive(it) } ?: v
+                "float" -> v.content.toDoubleOrNull()?.let { JsonPrimitive(it) } ?: v
+                else -> v
+            }
+        }
+    }
+
+    /**
+     * Slider thumb → field text. Locale-stable (Locale.ROOT) so the decimal
+     * separator can never become ',' — which would fail both validation and
+     * the wire typing on other devices.
+     */
+    fun sliderValueText(type: String, value: Float): String =
+        if (type == "int") value.toInt().toString()
+        else String.format(java.util.Locale.ROOT, "%.2f", value)
 
     /** A human one-liner for the run button state ("2 fields need attention"). */
     fun problems(schema: ToolSchema, values: Map<String, FieldValue>): List<String> =

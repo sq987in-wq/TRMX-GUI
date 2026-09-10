@@ -143,7 +143,7 @@ fun ChainsScreen(
                              else MaterialTheme.colorScheme.tertiary)
                     }
                     if (run.status == "PAUSED") {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ActionFlowRow {
                             Button(onClick = onResume) { Text("resume from step ${run.currentStep + 1}") }
                             OutlinedButton(onClick = onStopRun) { Text("stop") }
                         }

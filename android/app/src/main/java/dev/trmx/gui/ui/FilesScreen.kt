@@ -38,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.trmx.gui.FileBrowserState
+import dev.trmx.gui.files.FilesFilter
 import dev.trmx.gui.model.FileEntry
 
 private val TYPE_GLYPH = mapOf(
@@ -77,6 +79,11 @@ fun FilesScreen(
     var renameTarget by remember { mutableStateOf<FileEntry?>(null) }
     var deleteTarget by remember { mutableStateOf<FileEntry?>(null) }
     var actionsTarget by remember { mutableStateOf<FileEntry?>(null) }
+
+    // Dotfiles default-hidden (UX-audit P0): the §6.2 listing is complete by
+    // design; hiding is a presentation choice, persisted across recompositions.
+    var showHidden by rememberSaveable { mutableStateOf(false) }
+    val visible = FilesFilter.visible(state.entries, showHidden)
 
     val context = LocalContext.current
     val picker = rememberLauncherForActivityResult(
@@ -114,13 +121,16 @@ fun FilesScreen(
                 Text(state.path, fontFamily = FontFamily.Monospace,
                      style = MaterialTheme.typography.bodyLarge)
                 if (pickFile == null) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ActionFlowRow {
                         OutlinedButton(onClick = onUp, enabled = state.path != "~") { Text("↑ up") }
                         OutlinedButton(onClick = onRefresh) { Text("refresh") }
                         Button(onClick = { newDirDialog = true }) { Text("+ folder") }
                         Button(onClick = {
                             picker.launch(arrayOf("*/*"))
                         }) { Text("↑ upload") }
+                        OutlinedButton(onClick = { showHidden = !showHidden }) {
+                            Text(if (showHidden) "● dotfiles" else "◌ dotfiles")
+                        }
                     }
                 } else if (pickFile == false) {
                     Button(onClick = { onPicked(state.path) }) { Text("use this folder ✓") }
@@ -187,8 +197,18 @@ fun FilesScreen(
                                            contentAlignment = Alignment.Center) {
                 Text("This folder is empty.", color = MaterialTheme.colorScheme.secondary)
             }
+            visible.isEmpty() -> Box(modifier = Modifier.fillMaxSize(),
+                                     contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally,
+                       verticalArrangement = Arrangement.spacedBy(Sp.s)) {
+                    Text(
+                        "${state.entries.size} hidden ${if (state.entries.size == 1) "entry" else "entries"}",
+                        color = MaterialTheme.colorScheme.secondary)
+                    OutlinedButton(onClick = { showHidden = true }) { Text("show dotfiles") }
+                }
+            }
             else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(state.entries, key = { it.name }) { entry ->
+                items(visible, key = { it.name }) { entry ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
