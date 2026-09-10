@@ -331,3 +331,32 @@ Screenshots for anything visual; `~/.trmx/bridge.log` tail for submit or
 listing failures. For a rejected submit, note the exact error text shown
 under the form — the wire-type fix should make ARG_INVALID on numeric
 args impossible.
+
+# UX-audit round 2 (P2) — productization (2026-09-10)
+
+**Build:** CI green on the P2 commit. **App-only** — bridge stays v0.4.1,
+install in place.
+
+## Acceptance checklist
+
+| # | Action | Expected |
+|---|--------|----------|
+| 1 | Cold-start the app (fresh from launcher) | **no white flash** at launch; status bar/nav dark slate |
+| 2 | Open any tool form and focus a text field | the **keyboard is dark**, fields are dark slate containers with green focus border — no harsh white anywhere |
+| 3 | Tool form / job detail top | **native top app bar** with a back arrow; no "← Toolbox" pill |
+| 4 | Home with no tasks | **hero workspace** ("Your Linux runtime, on this phone.") — not a dead task list |
+| 5 | Home intent cards | four cards: **Download media · Convert / transcode · Run a command · Start a service** — each opens its form (or the argv dialog) with one tap |
+| 6 | "Run a command" card | the argv dialog opens right from Home |
+| 7 | Files | rows read **"Aug 28 · 3.5 KB"** — no ISO timestamps, no `drwx------`; folders listed first |
+| 8 | Tap a file in Files | **File Details sheet**: full path, type, exact size, modified (relative + ISO), permissions, symlink target; open/share/save at the bottom |
+| 9 | Long-press a file | menu now leads with **Details** |
+| 10 | Toolbox | cards read **"● Ready"** / **"● Setup required"** — no SAFE/CONFIRM badges |
+| 11 | Chains tab (no saved chains) | educational **Fetch → Process → Archive** card with "Create your first pipeline" — not a black void |
+| 12 | Tool form RUN | unchanged: confirm per tier, spinner inside the button |
+
+## If something breaks
+
+Screenshots for anything visual (this round is visual by nature). If a
+field still renders white anywhere, note WHICH screen and whether the
+keyboard or the field itself is white — the XML theme is the root fix,
+TrmxFieldColors the belt-and-braces.

@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Compose-only app: no XML theme machinery needed, just a clean base. -->
-    <style name="Theme.TRMX" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Compose-only app: no XML theme machinery needed, just a clean base.
+         DARK base (UX-audit P2): the app is dark by identity (ADR-011), and a
+         LIGHT platform theme made everything platform-drawn render white —
+         the IME keyboard, text-selection handles, splash. Compose paints its
+         own dark surfaces, but the platform chrome around them did not. -->
+    <style name="Theme.TRMX" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/trmx_window_bg</item>
+        <item name="android:statusBarColor">@color/trmx_window_bg</item>
+        <item name="android:navigationBarColor">@color/trmx_window_bg</item>
+    </style>
 </resources>

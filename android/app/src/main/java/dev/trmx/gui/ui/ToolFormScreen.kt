@@ -25,6 +25,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -36,6 +37,9 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -57,6 +61,7 @@ import dev.trmx.gui.model.ToolExample
 import dev.trmx.gui.tools.FieldValue
 import dev.trmx.gui.tools.FormEngine
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ToolFormScreen(
     state: ToolFormState,
@@ -74,29 +79,34 @@ fun ToolFormScreen(
     val submittable = FormEngine.isSubmittable(schema, state.values)
     val preview = FormEngine.previewArgv(schema, state.values)
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(Sp.m),
-        verticalArrangement = Arrangement.spacedBy(Sp.s + Sp.xs),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = onBack) { Text("← Toolbox") }
-            Spacer(Modifier.width(Sp.s))
-            Column {
-                Text(schema.name, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                if (state.stepIndex != null) {
-                    Text("editing chain step ${state.stepIndex + 1}",
-                         style = MaterialTheme.typography.bodySmall,
-                         color = MaterialTheme.colorScheme.tertiary)
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Native top app bar (UX-audit P2): standard back arrow, tool name
+        // as the title — no more web-style "← Toolbox" pill.
+        TopAppBar(
+            title = {
+                Column {
+                    Text(schema.name, fontWeight = FontWeight.Bold)
+                    if (state.stepIndex != null) {
+                        Text("editing chain step ${state.stepIndex + 1}",
+                             style = MaterialTheme.typography.bodySmall,
+                             color = MaterialTheme.colorScheme.tertiary)
+                    }
                 }
-            }
-            Spacer(Modifier.weight(1f))
-            Text(schema.risk_tier.uppercase(),
-                 color = TrmxColors.tier(schema.risk_tier),
-                 fontSize = 11.sp, fontWeight = FontWeight.Bold)
-        }
+            },
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "back")
+                }
+            },
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(Sp.m),
+            verticalArrangement = Arrangement.spacedBy(Sp.s + Sp.xs),
+        ) {
 
         state.notice?.let {
             Text(it, style = MaterialTheme.typography.bodySmall,
@@ -173,7 +183,7 @@ fun ToolFormScreen(
                 }
             }
         }
-        Spacer(Modifier.width(Sp.xs))
+        }
     }
 
     if (confirmRun) {
@@ -201,7 +211,7 @@ fun ToolFormScreen(
             text = {
                 OutlinedTextField(value = title, onValueChange = { title = it },
                                   label = { Text("recipe name") }, singleLine = true,
-                                  shape = FieldShape)
+                                  shape = FieldShape, colors = TrmxFieldColors())
             },
             confirmButton = {
                 TextButton(onClick = {
@@ -289,6 +299,7 @@ private fun Field(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 shape = FieldShape,
+                colors = TrmxFieldColors(),
                 isError = err != null,
                 supportingText = {
                     when {

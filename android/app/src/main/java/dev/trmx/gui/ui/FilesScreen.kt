@@ -28,8 +28,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -42,7 +44,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -51,11 +52,12 @@ import androidx.compose.ui.unit.sp
 import dev.trmx.gui.FileBrowserState
 import dev.trmx.gui.files.FilesFilter
 import dev.trmx.gui.model.FileEntry
+import dev.trmx.gui.tools.JobLabels
 
 private val TYPE_GLYPH = mapOf(
     "dir" to "📁", "file" to "📄", "symlink" to "🔗", "other" to "•")
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun FilesScreen(
     state: FileBrowserState,
@@ -79,11 +81,13 @@ fun FilesScreen(
     var renameTarget by remember { mutableStateOf<FileEntry?>(null) }
     var deleteTarget by remember { mutableStateOf<FileEntry?>(null) }
     var actionsTarget by remember { mutableStateOf<FileEntry?>(null) }
+    var detailsTarget by remember { mutableStateOf<FileEntry?>(null) }
 
     // Dotfiles default-hidden (UX-audit P0): the §6.2 listing is complete by
     // design; hiding is a presentation choice, persisted across recompositions.
+    // P2: folders first, human metadata — a file manager, not `ls -la`.
     var showHidden by rememberSaveable { mutableStateOf(false) }
-    val visible = FilesFilter.visible(state.entries, showHidden)
+    val display = FilesFilter.sortForDisplay(FilesFilter.visible(state.entries, showHidden))
 
     val context = LocalContext.current
     val picker = rememberLauncherForActivityResult(
@@ -197,7 +201,7 @@ fun FilesScreen(
                                            contentAlignment = Alignment.Center) {
                 Text("This folder is empty.", color = MaterialTheme.colorScheme.secondary)
             }
-            visible.isEmpty() -> Box(modifier = Modifier.fillMaxSize(),
+            display.isEmpty() -> Box(modifier = Modifier.fillMaxSize(),
                                      contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally,
                        verticalArrangement = Arrangement.spacedBy(Sp.s)) {
@@ -208,17 +212,20 @@ fun FilesScreen(
                 }
             }
             else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(visible, key = { it.name }) { entry ->
+                items(display, key = { it.name }) { entry ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
                             .combinedClickable(
                                 onClick = {
-                                    if (entry.type == "dir") {
-                                        onOpenPath(state.path.trimEnd('/') + "/" + entry.name)
-                                    } else if (pickFile == true) {
-                                        onPicked(state.path.trimEnd('/') + "/" + entry.name)
+                                    when {
+                                        entry.type == "dir" ->
+                                            onOpenPath(state.path.trimEnd('/') + "/" + entry.name)
+                                        pickFile == true ->
+                                            onPicked(state.path.trimEnd('/') + "/" + entry.name)
+                                        pickFile == null ->
+                                            detailsTarget = entry   // P2: tap = details
                                     }
                                 },
                                 onLongClick = { if (pickFile == null) actionsTarget = entry },
@@ -229,21 +236,15 @@ fun FilesScreen(
                              modifier = Modifier.width(34.dp), fontSize = 18.sp)
                         Column(modifier = Modifier.weight(1f)) {
                             Text(entry.name, style = MaterialTheme.typography.bodyLarge)
+                            // Human metadata only (P2): "Aug 28 · 3.5 KB".
+                            // Raw ISO stamps, permissions and symlink targets
+                            // live in the details sheet now.
                             Text(
-                                buildString {
-                                    append(Formatter.formatShortFileSize(context, entry.size))
-                                    entry.mode?.let { append("  ").append(it) }
-                                    entry.mtime?.let { append("  ").append(it) }
-                                },
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
+                                "${JobLabels.relativeTime(entry.mtime) ?: "—"}  ·  " +
+                                    Formatter.formatShortFileSize(context, entry.size),
+                                fontFamily = FontFamily.Monospace, fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.secondary,
                             )
-                            if (entry.type == "symlink") {
-                                Text("→ ${entry.target ?: "?"}",
-                                     fontFamily = FontFamily.Monospace, fontSize = 11.sp,
-                                     color = Color(0xFF80CBC4))
-                            }
                         }
                         Text("⋮", color = MaterialTheme.colorScheme.secondary)
                     }
@@ -259,7 +260,8 @@ fun FilesScreen(
             title = { Text("New folder") },
             text = {
                 OutlinedTextField(value = name, onValueChange = { name = it },
-                                  label = { Text("folder name") }, singleLine = true)
+                                  label = { Text("folder name") }, singleLine = true,
+                                  colors = TrmxFieldColors())
             },
             confirmButton = {
                 TextButton(onClick = {
@@ -277,6 +279,9 @@ fun FilesScreen(
             title = { Text(entry.name) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = { detailsTarget = entry; actionsTarget = null }) {
+                        Text("Details")
+                    }
                     if (entry.type != "dir") {
                         TextButton(onClick = { onOpenFile(entry); actionsTarget = null }) {
                             Text("Open (via viewer app)")
@@ -311,7 +316,8 @@ fun FilesScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = newName, onValueChange = { newName = it },
-                                      label = { Text("new name") }, singleLine = true)
+                                      label = { Text("new name") }, singleLine = true,
+                                      colors = TrmxFieldColors())
                     Text("…or remove it entirely:", style = MaterialTheme.typography.bodySmall)
                     Button(onClick = {
                         deleteTarget = entry
@@ -355,6 +361,67 @@ fun FilesScreen(
                 TextButton(onClick = { deleteTarget = null }) { Text("keep it") }
             },
         )
+    }
+
+    detailsTarget?.let { entry ->
+        // File Details (UX-audit P2): the raw Linux facts — full path,
+        // permissions, exact timestamps, symlink target — live here, not
+        // in the list rows.
+        val fullPath = state.path.trimEnd('/') + "/" + entry.name
+        ModalBottomSheet(onDismissRequest = { detailsTarget = null }) {
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = Sp.m)
+                    .padding(bottom = Sp.l),
+                verticalArrangement = Arrangement.spacedBy(Sp.s),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(TYPE_GLYPH[entry.type] ?: "•", fontSize = 20.sp)
+                    Spacer(Modifier.width(Sp.s))
+                    Text(
+                        entry.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                DetailKV("path", fullPath)
+                DetailKV("type", entry.type)
+                DetailKV(
+                    "size",
+                    "${Formatter.formatShortFileSize(context, entry.size)}  ·  ${entry.size} bytes")
+                DetailKV(
+                    "modified",
+                    "${JobLabels.relativeTime(entry.mtime) ?: "—"}  ·  ${entry.mtime ?: "—"}")
+                entry.mode?.let { DetailKV("permissions", it) }
+                entry.target?.let { DetailKV("symlink to", it) }
+
+                if (entry.type != "dir") {
+                    ActionFlowRow {
+                        Button(onClick = { onOpenFile(entry); detailsTarget = null }) {
+                            Text("open")
+                        }
+                        OutlinedButton(onClick = { onShareFile(entry); detailsTarget = null }) {
+                            Text("share")
+                        }
+                        OutlinedButton(onClick = { onDownload(entry); detailsTarget = null }) {
+                            Text("save to app")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailKV(k: String, v: String) {
+    Row {
+        Text(k, fontFamily = FontFamily.Monospace, fontSize = 11.sp,
+             color = MaterialTheme.colorScheme.secondary,
+             modifier = Modifier.width(90.dp))
+        Text(v, fontFamily = FontFamily.Monospace, fontSize = 11.sp,
+             style = MaterialTheme.typography.bodySmall)
     }
 }
 

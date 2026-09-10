@@ -91,3 +91,29 @@ expert action stops masquerading as a primary goal.
 - P2 (follow-up): Files dirs-first grouping + relative mtimes, systemic
   empty states, argv-preview expander, remaining audit points.
 - New tests: `UxAuditTest` (5), `JobLabelsTest` (5) — JVM-total 89.
+
+## P2 addendum — productization (same day, user on-device feedback)
+
+### 7. Intent cards, not a downloader
+
+Home leads with four equal-footing intent cards (Download media ·
+Convert/transcode · Run a command · Start a service) and a hero workspace
+when idle. `openToolById` fetch-then-opens a schema so the cards work
+with a cold registry. The media trio was a showcase; the Home IA now
+says so.
+
+### 8. Dark platform theme (root cause of "white input boxes")
+
+The XML theme parented `Theme.Material.Light` — Compose painted dark
+surfaces but everything platform-drawn (IME, selection handles, splash,
+window chrome) rendered light. Now `Theme.Material` + slate window
+colors; `TrmxFieldColors` pins every field to explicit dark
+containers/borders/cursor (10 call sites).
+
+### 9. Native chrome + human Files + honest cards
+
+TopAppBar (back arrow, tool/task title) on the two overlay screens;
+Files rows show "Aug 28 · 3.5 KB" with dirs first, raw Linux facts in a
+File Details sheet (tap or menu); Toolbox cards read Ready / Setup
+required (tier still gates RUN — security posture unchanged); Chains
+gains an educational empty state.

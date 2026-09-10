@@ -132,6 +132,7 @@ private fun WelcomeBody(
         label = { Text("Install source (base URL)") },
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
+        colors = TrmxFieldColors(),
         supportingText = {
             Text("Where install.sh and the bridge are fetched from (SHA256-verified).")
         })

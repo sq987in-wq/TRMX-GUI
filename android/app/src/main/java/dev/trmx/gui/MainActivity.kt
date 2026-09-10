@@ -28,6 +28,7 @@ import dev.trmx.gui.ui.DashboardScreen
 import dev.trmx.gui.ui.DiagnosticsSheet
 import dev.trmx.gui.ui.FilesScreen
 import dev.trmx.gui.ui.JobDetailScreen
+import dev.trmx.gui.ui.SubmitDialog
 import dev.trmx.gui.ui.ToolFormScreen
 import dev.trmx.gui.ui.ToolboxScreen
 import dev.trmx.gui.ui.TRMXTheme
@@ -82,6 +83,8 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
     val termuxInstalled = remember { vm.isTermuxInstalled() }
     var screen by remember { mutableStateOf(Screen.DASHBOARD) }
     var showDiagnostics by remember { mutableStateOf(false) }
+    // Custom-command dialog, openable from Home intent cards (P2).
+    var showSubmit by remember { mutableStateOf(false) }
 
     // Cold-start recipe shortcut (set by MainActivity before composition).
     LaunchedEffect(Unit) {
@@ -297,6 +300,8 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                                 onOpenDiagnostics = { showDiagnostics = true },
                                 onJobClick = vm::selectJob,
                                 onOpenRecipe = { id -> vm.openRecipe(id) },
+                                onOpenIntent = { toolId -> vm.openToolById(toolId) },
+                                onOpenCustom = { showSubmit = true },
                                 modifier = Modifier.padding(padding),
                             )
                         }
@@ -311,6 +316,22 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                         onStopBridge = vm::stopBridge,
                         onRerunWizard = vm::resetWizard,
                         onDismiss = { showDiagnostics = false },
+                    )
+                }
+
+                // Custom command (argv) — Home intent card entry (P2).
+                if (showSubmit) {
+                    SubmitDialog(
+                        state = submitForm,
+                        onName = vm::editName,
+                        onArgv = vm::editArgvText,
+                        onCwd = vm::editCwd,
+                        onTimeout = vm::editTimeout,
+                        onSubmit = vm::submitJob,
+                        onDismiss = {
+                            showSubmit = false
+                            vm.clearSubmitErrors()
+                        },
                     )
                 }
             }

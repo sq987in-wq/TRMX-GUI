@@ -11,6 +11,7 @@ package dev.trmx.gui.ui
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -118,6 +119,31 @@ object TrmxColors {
         else -> Cancelled
     }
 }
+
+// ---- shared field colors (UX-audit P2) ------------------------------------
+
+/**
+ * One source of truth for every text field in the app: explicit dark
+ * container + matching border/text/cursor colors, so no platform or
+ * library default can ever paint a light field on the slate surface
+ * (the "harsh bright-white input boxes" report — root cause was the
+ * light XML theme, fixed in themes.xml; this is the belt-and-braces).
+ */
+@Composable
+fun TrmxFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+    focusedBorderColor = MaterialTheme.colorScheme.primary,
+    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+    focusedLabelColor = MaterialTheme.colorScheme.primary,
+    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    focusedSupportingTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    unfocusedSupportingTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    cursorColor = MaterialTheme.colorScheme.primary,
+)
 
 @Composable
 fun TRMXTheme(content: @Composable () -> Unit) {

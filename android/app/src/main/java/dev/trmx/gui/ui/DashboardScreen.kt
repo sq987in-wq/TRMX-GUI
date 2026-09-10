@@ -1,13 +1,13 @@
 package dev.trmx.gui.ui
 
 /*
- * Home = Command Center (UX-audit P1, ADR-012). Inverted hierarchy:
+ * Home = Command Center (UX-audit P1+P2, ADR-012).
  *   1. status pill (connected / N running / error) → opens Diagnostics
- *   2. quick run — saved recipes, one tap to a filled form
- *   3. tasks — human outcome labels (JobLabels), J-ID secondary copyable
- * The bridge metrics dump, Refresh, Stop bridge and Re-run setup moved to
- * the Diagnostics sheet; the manual argv dialog moved to the Toolbox
- * ("Custom command"). The job list still updates via SSE events.
+ *   2. hero workspace when idle — an inviting start, not a dead task list
+ *   3. INTENT cards for the full runtime (never just a downloader):
+ *      Download media · Convert/transcode · Run a command · Start a service
+ *   4. tasks with human labels (JobLabels), J-ID secondary copyable
+ *   5. quick run (saved recipes)
  */
 
 import androidx.compose.foundation.BorderStroke
@@ -48,6 +48,8 @@ fun DashboardScreen(
     onOpenDiagnostics: () -> Unit,
     onJobClick: (String) -> Unit,
     onOpenRecipe: (String) -> Unit,
+    onOpenIntent: (String) -> Unit,
+    onOpenCustom: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -72,11 +74,19 @@ fun DashboardScreen(
                  color = MaterialTheme.colorScheme.error)
         }
 
+        if (state.jobs.isEmpty()) {
+            HeroWorkspace()
+        }
+
+        IntentGrid(onOpenIntent = onOpenIntent, onOpenCustom = onOpenCustom)
+
+        if (state.jobs.isNotEmpty()) {
+            TasksCard(state.jobs, onJobClick)
+        }
+
         if (recipes.isNotEmpty()) {
             QuickRunCard(recipes, onOpenRecipe)
         }
-
-        TasksCard(state.jobs, onJobClick)
     }
 }
 
@@ -104,6 +114,87 @@ private fun StatusPill(state: DashboardState, onOpenDiagnostics: () -> Unit) {
             fontSize = 12.sp,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
         )
+    }
+}
+
+/** Idle Home: an inviting workspace instead of a dead task list (P2). */
+@Composable
+private fun HeroWorkspace() {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(Sp.l),
+            verticalArrangement = Arrangement.spacedBy(Sp.xs),
+        ) {
+            Text(
+                "Your Linux runtime,\non this phone.",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold)
+            Text(
+                "Run tools, scripts and services locally — no cloud, no root. " +
+                    "Start with a goal:",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/**
+ * Intent-based action cards for the FULL runtime (P2): TRMX is not a
+ * downloader — download, convert, arbitrary commands and long-running
+ * services are one tap away, on equal footing.
+ */
+@Composable
+private fun IntentGrid(
+    onOpenIntent: (String) -> Unit,
+    onOpenCustom: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(Sp.s)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Sp.s)) {
+            IntentCard(
+                icon = "⬇", title = "Download media", sub = "yt-dlp · video & audio",
+                modifier = Modifier.weight(1f),
+            ) { onOpenIntent("yt-dlp") }
+            IntentCard(
+                icon = "▶", title = "Convert / transcode", sub = "ffmpeg · any format",
+                modifier = Modifier.weight(1f),
+            ) { onOpenIntent("ffmpeg") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(Sp.s)) {
+            IntentCard(
+                icon = "⚡", title = "Run a command", sub = "any argv · scripts",
+                modifier = Modifier.weight(1f),
+            ) { onOpenCustom() }
+            IntentCard(
+                icon = "◎", title = "Start a service", sub = "serve a folder over HTTP",
+                modifier = Modifier.weight(1f),
+            ) { onOpenIntent("http-server") }
+        }
+    }
+}
+
+@Composable
+private fun IntentCard(
+    icon: String,
+    title: String,
+    sub: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+    ) {
+        Column(
+            modifier = Modifier.padding(Sp.m),
+            verticalArrangement = Arrangement.spacedBy(Sp.xs),
+        ) {
+            Text(icon, fontSize = 20.sp)
+            Text(title, fontWeight = FontWeight.Medium,
+                 style = MaterialTheme.typography.bodyLarge)
+            Text(sub, style = MaterialTheme.typography.bodySmall,
+                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -152,12 +243,6 @@ private fun TasksCard(jobs: List<JobSummary>, onJobClick: (String) -> Unit) {
                 Text("${jobs.size}",
                      style = MaterialTheme.typography.bodySmall,
                      color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            if (jobs.isEmpty()) {
-                Text(
-                    "Nothing has run yet — open Tools and pick one.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             jobs.take(20).forEach { job -> TaskRow(job, onJobClick) }
         }

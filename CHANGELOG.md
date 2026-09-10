@@ -6,6 +6,35 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Changed — UX-audit P2: productization pass (2026-09-10, app-only, ADR-012)
+- **Home = intent-based workspace**: hero card when idle ("Your Linux
+  runtime, on this phone."), and four equal-footing action cards —
+  **Download media · Convert / transcode · Run a command · Start a
+  service**. TRMX presents its full runtime, not a downloader. Custom
+  command opens the argv dialog straight from Home; tool cards open even
+  with a cold registry (`openToolById` fetch-then-open).
+- **White input fields fixed at the ROOT**: the XML theme parented
+  `Theme.Material.Light` — every platform-drawn surface (IME keyboard,
+  selection handles, splash) rendered light around our dark Compose UI.
+  Now `Theme.Material` (dark) with slate window/status/nav colors; plus
+  `TrmxFieldColors` — one explicit dark-container/border/cursor palette
+  applied to all 10 text fields in the app.
+- **Native top app bars**: Tool form and Job detail lose the web-style
+  "← Toolbox"/"← Jobs" pills — standard `TopAppBar` with back arrow,
+  tool/task name as title.
+- **Files is a file manager, not `ls -la`**: rows show "Aug 28 · 3.5 KB"
+  (human date + size); folders sort first; raw ISO timestamps,
+  permissions, full paths and symlink targets moved to a **File Details
+  bottom sheet** (tap a file, or Details in the long-press menu) with
+  open/share/save actions.
+- **Prototype badges killed**: Toolbox cards show "● Ready" / "● Setup
+  required" instead of SAFE/CONFIRM tier tags (the tier still drives the
+  RUN confirmation in the form — no security change).
+- **Chains empty void filled**: educational workflow card
+  (Fetch → Process → Archive) with "Create your first pipeline" CTA;
+  leftover hardcoded status colors replaced with `TrmxColors`.
+- Tests: `UxAuditTest` +1 (dirs-first display sort). JVM total 90.
+
 ### Fixed — UX-audit P0: correctness triage (2026-09-10, app-only)
 - **Wire typing (the "must be an integer" bug):** int/float tool args were
   sent as JSON strings; the bridge's §7.2 `isinstance` validation rightly

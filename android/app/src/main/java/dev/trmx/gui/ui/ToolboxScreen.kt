@@ -211,23 +211,24 @@ private fun ToolCard(t: ToolStatus, onOpenTool: (String) -> Unit, onInstall: () 
         .fillMaxWidth()
         .clickable(enabled = t.installed) { onOpenTool(t.schema.id) }) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(t.schema.name, fontWeight = FontWeight.Bold,
-                     modifier = Modifier.weight(1f))
-                Text(t.schema.risk_tier.uppercase(),
-                     color = TrmxColors.tier(t.schema.risk_tier),
-                     fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            }
+            Text(t.schema.name, fontWeight = FontWeight.Bold,
+                 style = MaterialTheme.typography.bodyLarge)
             Text(t.schema.description, style = MaterialTheme.typography.bodySmall)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (t.installed) {
-                    Text("✓ ${t.version ?: "installed"}",
-                         color = TrmxColors.Running,
-                         style = MaterialTheme.typography.bodySmall)
+                    // UX-audit P2: clean status instead of risk-tier badges —
+                    // the tier still drives the RUN confirmation in the form.
+                    Text("● Ready", color = TrmxColors.Running,
+                         style = MaterialTheme.typography.bodySmall,
+                         fontWeight = FontWeight.Medium)
+                    t.version?.let {
+                        Text("  ·  $it", style = MaterialTheme.typography.bodySmall,
+                             color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 } else {
-                    Text("✗ not installed",
-                         color = MaterialTheme.colorScheme.error,
-                         style = MaterialTheme.typography.bodySmall)
+                    Text("● Setup required", color = TrmxColors.Queued,
+                         style = MaterialTheme.typography.bodySmall,
+                         fontWeight = FontWeight.Medium)
                     Spacer(Modifier.weight(1f))
                     OutlinedButton(onClick = onInstall) { Text("install") }
                 }

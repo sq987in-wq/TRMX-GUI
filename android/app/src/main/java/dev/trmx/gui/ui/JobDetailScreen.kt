@@ -9,7 +9,6 @@ package dev.trmx.gui.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -23,10 +22,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.text.format.Formatter
@@ -50,6 +54,7 @@ import dev.trmx.gui.tools.JobLabels
 
 private val ACTIVE = setOf("QUEUED", "RUNNING", "CANCELLING")
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun JobDetailScreen(
     state: JobDetailState,
@@ -62,26 +67,32 @@ fun JobDetailScreen(
 ) {
     var confirmCancel by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = onBack) { Text("← Jobs") }
-            Spacer(Modifier.width(12.dp))
-            Column {
-                // Human label is the title (UX-audit P1); the J-ID is
-                // secondary, copyable metadata — still one tap away.
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Native top app bar (UX-audit P2): human task label as the title,
+        // standard back arrow.
+        TopAppBar(
+            title = {
                 Text(
-                    state.job?.let { JobLabels.taskLabel(it) } ?: "Job",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold)
-                CopyableId(state.jobId)
-            }
-        }
+                    state.job?.let { JobLabels.taskLabel(it) } ?: "Task",
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "back")
+                }
+            },
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
 
         val job = state.job
         state.error?.let {
@@ -95,15 +106,16 @@ fun JobDetailScreen(
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(JobLabels.subtitle(job),
-                             style = MaterialTheme.typography.bodySmall,
-                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                             modifier = Modifier.weight(1f))
+                        // J-ID: secondary, copyable — one tap for bug reports.
+                        CopyableId(state.jobId, modifier = Modifier.weight(1f))
                         Text(
                             job.status,
                             color = statusColor(job.status),
                             fontWeight = FontWeight.Bold)
                     }
+                    Text(JobLabels.subtitle(job),
+                         style = MaterialTheme.typography.bodySmall,
+                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Section("argv") {
                         Text(
                             job.argv?.joinToString("\n") ?: "—",
@@ -146,6 +158,7 @@ fun JobDetailScreen(
             }
         } else if (state.error == null) {
             Text("loading…")
+        }
         }
     }
 

@@ -109,4 +109,16 @@ class UxAuditTest {
         assertEquals(listOf("downloads", "video.mp4"), hidden.map { it.name })
         assertEquals(entries, FilesFilter.visible(entries, showHidden = true))
     }
+
+    @Test
+    fun `display sort puts folders first, then alphabetical`() {
+        val entries = listOf(
+            entry("video.mp4"), entry("downloads", "dir"), entry("abc.txt"),
+            entry("Archive", "dir"), entry("zz-dir", "dir"),
+        )
+        val sorted = FilesFilter.sortForDisplay(entries)
+        // folders first (case-insensitive alpha), then files (alpha)
+        assertEquals(listOf("Archive", "downloads", "zz-dir", "abc.txt", "video.mp4"),
+                     sorted.map { it.name })
+    }
 }

@@ -801,6 +801,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun closeToolForm() { _toolForm.value = ToolFormState() }
 
+    /**
+     * Home intent cards (P2): open a tool form even when the registry is
+     * cold (Home renders before the Toolbox ever loads). Cached schema →
+     * straight to the form; otherwise fetch, merge into the registry, open.
+     */
+    fun openToolById(toolId: String) {
+        if (_tools.value.tools.any { it.schema.id == toolId }) {
+            openToolForm(toolId); return
+        }
+        viewModelScope.launch {
+            when (val res = client().getTool(toolId)) {
+                is BridgeResult.Success -> {
+                    _tools.update { t ->
+                        if (t.tools.none { it.schema.id == toolId })
+                            t.copy(tools = t.tools + res.data) else t
+                    }
+                    openToolForm(toolId)
+                }
+                else -> _dashboard.update {
+                    it.copy(notice = "tool unavailable: $toolId — try Tools → scan ⟳")
+                }
+            }
+        }
+    }
+
     fun editFieldValue(arg: String, value: FieldValue) {
         _toolForm.update { it.copy(values = it.values + (arg to value),
                                    touched = it.touched + arg) }

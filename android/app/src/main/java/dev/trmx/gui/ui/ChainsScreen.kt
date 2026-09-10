@@ -32,9 +32,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.trmx.gui.ChainsState
@@ -85,6 +85,38 @@ fun ChainsScreen(
                  color = MaterialTheme.colorScheme.error)
         }
 
+        // ---- educational empty state (UX-audit P2) ----------------------
+        if (state.defs.isEmpty() && state.editing == null && state.run == null) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(Sp.l),
+                    verticalArrangement = Arrangement.spacedBy(Sp.m),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text("Pipelines", style = MaterialTheme.typography.titleLarge,
+                         fontWeight = FontWeight.Bold)
+                    Text(
+                        "Chain tools into one flow — each step's output feeds the next.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Sp.m),
+                    ) {
+                        FlowStep("⬇", "Fetch")
+                        Text("→", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        FlowStep("⚙", "Process")
+                        Text("→", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        FlowStep("📦", "Archive")
+                    }
+                    Button(onClick = onNew, modifier = Modifier.fillMaxWidth()) {
+                        Text("Create your first pipeline")
+                    }
+                }
+            }
+        }
+
         // ---- live run --------------------------------------------------
         state.run?.let { run ->
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -99,10 +131,10 @@ fun ChainsScreen(
                             "FAILED" -> "✗ FAILED"
                             else -> "⏸ PAUSED"
                         }, color = when (run.status) {
-                            "RUNNING" -> Color(0xFF4CAF50)
-                            "COMPLETED" -> Color(0xFF2196F3)
+                            "RUNNING" -> TrmxColors.Running
+                            "COMPLETED" -> TrmxColors.Completed
                             "FAILED" -> MaterialTheme.colorScheme.error
-                            else -> Color(0xFFFF9800)
+                            else -> TrmxColors.Queued
                         }, fontWeight = FontWeight.Bold)
                     }
                     run.def.steps.forEachIndexed { i, step ->
@@ -122,7 +154,7 @@ fun ChainsScreen(
                                 },
                                 fontFamily = FontFamily.Monospace, fontSize = 11.sp,
                                 color = when {
-                                    job?.status == "COMPLETED" || (run.status == "COMPLETED") -> Color(0xFF2196F3)
+                                    job?.status == "COMPLETED" || (run.status == "COMPLETED") -> TrmxColors.Completed
                                     i == run.currentStep && run.status == "FAILED" -> MaterialTheme.colorScheme.error
                                     else -> MaterialTheme.colorScheme.secondary
                                 },
@@ -164,7 +196,8 @@ fun ChainsScreen(
                     OutlinedTextField(
                         value = def.title,
                         onValueChange = onSetTitle,
-                        label = { Text("chain title") }, singleLine = true)
+                        label = { Text("chain title") }, singleLine = true,
+                        colors = TrmxFieldColors())
                     def.steps.forEachIndexed { i, step ->
                         val schema = schemas[step.toolId]
                         val canChain = ChainPlanner.stepHasOutput(schema ?: return@forEachIndexed)
@@ -235,5 +268,14 @@ fun ChainsScreen(
             confirmButton = {},
             dismissButton = { TextButton(onClick = { addStepDialog = false }) { Text("cancel") } },
         )
+    }
+}
+
+@Composable
+private fun FlowStep(icon: String, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(icon, fontSize = 22.sp)
+        Text(label, style = MaterialTheme.typography.bodySmall,
+             color = MaterialTheme.colorScheme.secondary)
     }
 }

@@ -40,6 +40,7 @@ fun SubmitDialog(
                     onValueChange = onName,
                     label = { Text("Name (optional)") },
                     singleLine = true,
+                    colors = TrmxFieldColors(),
                     modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
                     value = state.argvText,
@@ -49,18 +50,21 @@ fun SubmitDialog(
                         Text("ffmpeg\n-i ~/in.mkv\n~/out.mp4", fontFamily = FontFamily.Monospace)
                     },
                     minLines = 4,
+                    colors = TrmxFieldColors(),
                     modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
                     value = state.cwd,
                     onValueChange = onCwd,
                     label = { Text("Working directory (optional, default ~)") },
                     singleLine = true,
+                    colors = TrmxFieldColors(),
                     modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
                     value = state.timeoutText,
                     onValueChange = onTimeout,
                     label = { Text("Timeout in seconds (optional)") },
                     singleLine = true,
+                    colors = TrmxFieldColors(),
                     modifier = Modifier.fillMaxWidth())
                 Text(
                     "Each line is passed to the bridge as exactly one argument — " +
