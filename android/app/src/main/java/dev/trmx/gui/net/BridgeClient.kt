@@ -243,18 +243,22 @@ class BridgeClient(
             jsonFormat.decodeFromString(ServiceAck.serializer(), body)
         }
 
+    // okhttp requires a body for POST (even zero bytes) — the bridge's
+    // lifecycle routes ignore the body entirely
+    private val emptyPost = ByteArray(0).toRequestBody(JSON)
+
     suspend fun startService(id: String): BridgeResult<ServiceStatus> =
-        call("POST", "/v1/services/${enc(id)}/start", null) { body, _ ->
+        call("POST", "/v1/services/${enc(id)}/start", emptyPost) { body, _ ->
             jsonFormat.decodeFromString(ServiceStatus.serializer(), body)
         }
 
     suspend fun stopService(id: String): BridgeResult<ServiceStatus> =
-        call("POST", "/v1/services/${enc(id)}/stop", null) { body, _ ->
+        call("POST", "/v1/services/${enc(id)}/stop", emptyPost) { body, _ ->
             jsonFormat.decodeFromString(ServiceStatus.serializer(), body)
         }
 
     suspend fun restartService(id: String): BridgeResult<ServiceStatus> =
-        call("POST", "/v1/services/${enc(id)}/restart", null) { body, _ ->
+        call("POST", "/v1/services/${enc(id)}/restart", emptyPost) { body, _ ->
             jsonFormat.decodeFromString(ServiceStatus.serializer(), body)
         }
 
