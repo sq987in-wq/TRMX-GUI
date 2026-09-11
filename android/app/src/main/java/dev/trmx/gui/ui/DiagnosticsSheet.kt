@@ -66,8 +66,7 @@ fun DiagnosticsSheet(
             } else {
                 TrmxCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        if (state.refreshing) "loading bridge info…" else "no bridge info yet",
-                        modifier = Modifier.padding(Sp.m))
+                        if (state.refreshing) "loading bridge info…" else "no bridge info yet")
                 }
             }
 
@@ -92,8 +91,9 @@ fun DiagnosticsSheet(
 @Composable
 private fun BridgeInfoCard(info: dev.trmx.gui.model.SystemInfo) {
     TrmxCard(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(Sp.m), verticalArrangement = Arrangement.spacedBy(Sp.xs)) {
-            Text("Bridge", fontWeight = FontWeight.Bold)
+        Column(verticalArrangement = Arrangement.spacedBy(Sp.xs)) {
+            Text("Bridge", style = MaterialTheme.typography.titleMedium,
+                 fontWeight = FontWeight.Bold)
             KeyValue("version", info.bridge_version)
             KeyValue("protocol", info.protocol_versions.joinToString(", "))
             KeyValue("uptime", "${info.uptime_s / 60} min")

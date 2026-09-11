@@ -1,36 +1,44 @@
 package dev.trmx.gui.ui
 
 /*
- * Phase 9 dynamic tool form, Phase 9.5 executive overhaul (ADR-011):
- * terminal-luxe styling, errors only after touch, path pickers as
- * trailing icons INSIDE the field, segmented enums, bounded sliders,
- * x_trmx secrets/units. The live argv preview stays the centerpiece.
+ * Dynamic tool form (Ph 9 → UX-audit P4 rebuild). Schema-driven fields with
+ * M3 floating labels ON the field outline, FilterChip enums, bounded
+ * sliders, x_trmx secrets/units, vector icons everywhere — and a sticky
+ * full-width primary action. Errors only after touch (Ph 9.5); the argv
+ * preview stays the honesty centerpiece.
  */
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -56,7 +64,6 @@ import dev.trmx.gui.tools.FieldValue
 import dev.trmx.gui.tools.FormEngine
 import dev.trmx.gui.ui.Tokens.Palette as P
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ToolFormScreen(
     state: ToolFormState,
@@ -75,98 +82,114 @@ fun ToolFormScreen(
     val preview = FormEngine.previewArgv(schema, state.values)
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Standard header (P3): TrmxTopBar — back arrow + tool name.
         TrmxTopBar(
             title = schema.name,
             onBack = onBack,
             subtitle = if (state.stepIndex != null)
                 "editing chain step ${state.stepIndex + 1}" else null,
+            actions = {
+                // Save-recipe lives in the header (P4): the sticky bar is
+                // reserved for the ONE primary action.
+                if (state.stepIndex == null) {
+                    IconButton(onClick = { saveRecipe = true }) {
+                        Icon(Icons.Outlined.StarBorder, contentDescription = "save recipe",
+                             tint = P.TextSecondary)
+                    }
+                }
+            },
         )
 
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .weight(1f)
                 .verticalScroll(rememberScrollState())
                 .padding(Sp.m),
-            verticalArrangement = Arrangement.spacedBy(Sp.s + Sp.xs),
+            verticalArrangement = Arrangement.spacedBy(Sp.m),   // 16 dp grid (P4)
         ) {
+            state.notice?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall,
+                     color = MaterialTheme.colorScheme.primary)
+            }
+            state.error?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall,
+                     color = MaterialTheme.colorScheme.error)
+            }
 
-        state.notice?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall,
-                 color = MaterialTheme.colorScheme.primary)
-        }
-        state.error?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall,
-                 color = MaterialTheme.colorScheme.error)
-        }
-
-        TrmxCard(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(Sp.m)) {
-                schema.description.let {
-                    if (it.isNotBlank()) Text(it, style = MaterialTheme.typography.bodyMedium,
-                                              color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TrmxCard(modifier = Modifier.fillMaxWidth()) {
+                if (schema.description.isNotBlank()) {
+                    Text(schema.description, style = MaterialTheme.typography.bodyMedium,
+                         color = P.TextSecondary)
                 }
             }
-        }
 
-        schema.args.forEach { a ->
-            Field(a, state, onEdit, onBrowsePath)
-        }
+            schema.args.forEach { a -> Field(a, state, onEdit, onBrowsePath) }
 
-        if (schema.examples.isNotEmpty()) {
-            Text("Try:", style = MaterialTheme.typography.bodySmall,
-                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(Sp.s)) {
-                schema.examples.take(3).forEach { ex ->
-                    FilterChip(selected = false, onClick = { onExample(ex) },
-                               label = { Text("▸ ${ex.label}") })
-                }
-            }
-        }
-
-        TrmxCard(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(Sp.m)) {
-                Text("will run on the phone:", style = MaterialTheme.typography.bodySmall,
-                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(preview.joinToString(" ") { shellWord(it) },
-                     fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                if (preview.any { it.startsWith("~/") }) {
-                    Text("paths are resolved against the Termux home by the bridge",
-                         style = MaterialTheme.typography.bodySmall, fontSize = 10.sp,
-                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
-
-        // Wraps instead of squeezing the last button (UX-audit P0).
-        ActionFlowRow {
-            // Always enabled: a premature tap marks every field touched and
-            // surfaces its validation error (Ph 9.5) instead of a dead button.
-            TrmxButton(
-                label = if (schema.risk_tier == "safe") "RUN ▶" else "RUN ▶ (confirm)",
-                onClick = { if (schema.risk_tier == "safe") onSubmit() else confirmRun = true },
-                enabled = !state.submitting && state.stepIndex == null,
-                leading = if (state.submitting) {
-                    {
-                        CircularProgressIndicator(
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(14.dp),
-                            color = P.OnAccent,
-                        )
+            if (schema.examples.isNotEmpty()) {
+                Text("Try:", style = MaterialTheme.typography.bodySmall,
+                     color = P.TextSecondary)
+                ActionFlowRow {
+                    schema.examples.take(3).forEach { ex ->
+                        FilterChip(selected = false, onClick = { onExample(ex) },
+                                   colors = TrmxChipColors(),
+                                   label = { Text(ex.label) })
                     }
-                } else null,
-            )
-            if (state.stepIndex == null) {
-                TrmxButton(label = "☆ save recipe",
-                           onClick = { saveRecipe = true },
-                           kind = TrmxButtonKind.Secondary,
-                           enabled = submittable && !state.submitting)
-            } else {
-                TrmxButton(label = "save to step ✓",
-                           onClick = onSubmit,
-                           enabled = submittable && !state.submitting)
+                }
+            }
+
+            TrmxCard(modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(Sp.xs)) {
+                    Text("will run on the phone:", style = MaterialTheme.typography.bodySmall,
+                         color = P.TextSecondary)
+                    Text(preview.joinToString(" ") { shellWord(it) },
+                         fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                    if (preview.any { it.startsWith("~/") }) {
+                        Text("paths are resolved against the Termux home by the bridge",
+                             style = MaterialTheme.typography.bodySmall, fontSize = 10.sp,
+                             color = P.TextSecondary)
+                    }
+                }
             }
         }
+
+        // Sticky primary action (P4): full-width, 48 dp, ice-cyan fill,
+        // pure black bold text — always visible without scrolling. A
+        // premature tap still marks every field touched (Ph 9.5).
+        Surface(
+            color = P.Background,
+            border = BorderStroke(1.dp, P.Border),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Box(modifier = Modifier.padding(Sp.m)) {
+                if (state.stepIndex == null) {
+                    TrmxButton(
+                        label = if (schema.risk_tier == "safe") "Run" else "Run — confirm first",
+                        onClick = {
+                            if (schema.risk_tier == "safe") onSubmit() else confirmRun = true
+                        },
+                        enabled = !state.submitting,
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        leading = if (state.submitting) {
+                            {
+                                CircularProgressIndicator(
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(14.dp),
+                                    color = P.OnAccent,
+                                )
+                            }
+                        } else {
+                            { Icon(Icons.Filled.PlayArrow, contentDescription = null,
+                                   tint = P.OnAccent) }
+                        },
+                    )
+                } else {
+                    TrmxButton(
+                        label = "Save to step",
+                        onClick = onSubmit,
+                        enabled = submittable && !state.submitting,
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                    )
+                }
+            }
         }
     }
 
@@ -209,7 +232,6 @@ fun ToolFormScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Field(
     a: ToolArg,
@@ -222,39 +244,33 @@ private fun Field(
     val err = FormEngine.visibleError(a, v, touched)
     val unit = a.x_trmx?.unit
     var secretRevealed by rememberSaveable(a.name) { mutableStateOf(false) }
+    val widget = FormEngine.widgetFor(a)
+    val fieldLabel = a.label.ifEmpty { a.name } + if (a.required) " *" else ""
 
     Column(verticalArrangement = Arrangement.spacedBy(Sp.xs)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(a.label.ifEmpty { a.name }, fontWeight = FontWeight.Medium,
-                 style = MaterialTheme.typography.bodyMedium)
-            if (a.required) {
-                Text(" *", color = MaterialTheme.colorScheme.tertiary,
-                     fontWeight = FontWeight.Bold)
-            }
+        // Text fields carry their label INSIDE the outline (M3 floating
+        // label, P4); the other widgets keep an external label row.
+        if (widget != "field") {
+            Text(fieldLabel, style = MaterialTheme.typography.titleSmall,
+                 fontWeight = FontWeight.SemiBold)
         }
 
-        when (FormEngine.widgetFor(a)) {
+        when (widget) {
             "toggle" -> Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(checked = v.bool, onCheckedChange = { onEdit(a.name, v.copy(bool = it)) })
                 Spacer(Modifier.width(Sp.s))
                 Text(if (v.bool) "on" else "off",
                      style = MaterialTheme.typography.bodySmall,
-                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                     color = P.TextSecondary)
             }
-            "segmented" -> SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                (a.enum ?: emptyList()).forEachIndexed { i, option ->
-                    SegmentedButton(
+            "segmented", "chips" -> ActionFlowRow {
+                (a.enum ?: emptyList()).forEach { option ->
+                    FilterChip(
                         selected = v.text == option,
                         onClick = { onEdit(a.name, FieldValue(text = option)) },
-                        shape = SegmentedButtonDefaults.itemShape(i, a.enum?.size ?: 0),
-                    ) { Text(option) }
-                }
-            }
-            "chips" -> Row(horizontalArrangement = Arrangement.spacedBy(Sp.s)) {
-                (a.enum ?: emptyList()).forEach { option ->
-                    FilterChip(selected = v.text == option,
-                               onClick = { onEdit(a.name, FieldValue(text = option)) },
-                               label = { Text(option) })
+                        colors = TrmxChipColors(),
+                        label = { Text(option) },
+                    )
                 }
             }
             "slider" -> {
@@ -279,13 +295,12 @@ private fun Field(
             else -> TrmxTextField(
                 value = if (a.type == "bool") "" else v.text,
                 onValueChange = { if (a.type != "bool") onEdit(a.name, v.copy(text = it)) },
-                label = a.label.ifEmpty { a.name },
+                label = fieldLabel,
                 modifier = Modifier.fillMaxWidth(),
                 isError = err != null,
                 supportingText = {
                     when {
-                        err != null -> Text("⚠ $err",
-                            color = MaterialTheme.colorScheme.error)
+                        err != null -> Text(err, color = MaterialTheme.colorScheme.error)
                         a.help != null -> Text(a.help)
                     }
                 },
@@ -293,14 +308,19 @@ private fun Field(
                     a.type == "path" -> {
                         {
                             IconButton(onClick = { onBrowsePath(a.name) }) {
-                                Text("📁")
+                                Icon(Icons.Outlined.Folder, contentDescription = "browse",
+                                     tint = P.TextSecondary)
                             }
                         }
                     }
                     a.x_trmx?.secret == true -> {
                         {
                             IconButton(onClick = { secretRevealed = !secretRevealed }) {
-                                Text(if (secretRevealed) "🙈" else "👁")
+                                Icon(
+                                    if (secretRevealed) Icons.Filled.VisibilityOff
+                                    else Icons.Filled.Visibility,
+                                    contentDescription = "reveal",
+                                    tint = P.TextSecondary)
                             }
                         }
                     }
@@ -318,18 +338,29 @@ private fun Field(
             )
         }
 
-        // help text for non-field widgets (fields show it in supportingText)
-        if (FormEngine.widgetFor(a) != "field" && a.help != null && err == null) {
-            Text(a.help, style = MaterialTheme.typography.bodySmall, fontSize = 11.sp,
-                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        if (err != null && FormEngine.widgetFor(a) != "field") {
-            Text("⚠ $err", style = MaterialTheme.typography.bodySmall,
-                 color = MaterialTheme.colorScheme.error)
+        // helper/error text for non-field widgets (fields use supportingText)
+        if (widget != "field") {
+            if (err != null) {
+                Text(err, style = MaterialTheme.typography.bodySmall,
+                     color = MaterialTheme.colorScheme.error)
+            } else if (a.help != null) {
+                Text(a.help, style = MaterialTheme.typography.bodySmall,
+                     color = P.TextSecondary)
+            }
         }
     }
 }
 
+/** Shared chip styling (P4): dark fill, cyan active container. */
+@Composable
+fun TrmxChipColors() = FilterChipDefaults.filterChipColors(
+    containerColor = P.FieldFill,
+    labelColor = P.TextPrimary,
+    selectedContainerColor = P.AccentContainer,
+    selectedLabelColor = P.OnAccentContainer,
+    selectedLeadingIconColor = P.Accent,
+)
+
 /** Quote for display only — the preview strip, not real shell parsing. */
 private fun shellWord(w: String): String =
-    if (w.contains(' ') || w.contains('"')) "\"$w\"" else w
+    if (w.contains(' ') || w.contains('\"')) "\"$w\"" else w

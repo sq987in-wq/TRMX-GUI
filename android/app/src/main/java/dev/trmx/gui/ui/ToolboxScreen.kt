@@ -19,7 +19,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AccountTree
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -34,10 +43,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.trmx.gui.model.ToolStatus
 import dev.trmx.gui.store.Recipe
+import dev.trmx.gui.ui.Tokens.Palette as P
 
 @Composable
 fun ToolboxScreen(
@@ -82,8 +93,9 @@ fun ToolboxScreen(
             Spacer(Modifier.weight(1f))
             if (state.loading) CircularProgressIndicator(strokeWidth = 3.dp)
             Spacer(Modifier.width(8.dp))
-            TrmxButton(label = "scan ⟳", onClick = onRefresh,
-                       kind = TrmxButtonKind.Secondary)
+            TrmxButton(label = "Scan",
+                       leading = { Icon(Icons.Outlined.Refresh, contentDescription = null) },
+                       onClick = onRefresh, kind = TrmxButtonKind.Secondary)
         }
 
         state.notice?.let {
@@ -96,7 +108,7 @@ fun ToolboxScreen(
         }
         if (state.schemaErrors.isNotEmpty()) {
             TrmxCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(Sp.m)) {
+                Column {
                     Text("Some user schemas in ~/.trmx/tools/ were skipped:",
                          fontWeight = FontWeight.Bold,
                          style = MaterialTheme.typography.bodySmall)
@@ -110,19 +122,24 @@ fun ToolboxScreen(
         }
 
         if (!state.loading && state.tools.isEmpty() && state.error == null) {
-            Text("No tools — tap “scan ⟳”.", color = MaterialTheme.colorScheme.secondary)
+            Text("No tools — tap Scan.", color = P.TextSecondary)
         }
 
         TrmxCard(
             modifier = Modifier.fillMaxWidth(),
             onClick = { showSubmit = true },
         ) {
-            Column(modifier = Modifier.padding(Sp.m), verticalArrangement = Arrangement.spacedBy(Sp.xs)) {
-                Text("⚡ Custom command", fontWeight = FontWeight.Bold,
-                     style = MaterialTheme.typography.bodyLarge)
-                Text("Run any argv directly — one line, one argument. No shell.",
-                     style = MaterialTheme.typography.bodySmall,
-                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Sp.m)) {
+                Icon(Icons.Outlined.Terminal, contentDescription = null,
+                     tint = P.Accent, modifier = Modifier.size(22.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(Sp.xs)) {
+                    Text("Custom command", style = MaterialTheme.typography.titleSmall,
+                         fontWeight = FontWeight.SemiBold)
+                    Text("Run any argv directly — one line, one argument. No shell.",
+                         style = MaterialTheme.typography.bodySmall,
+                         color = P.TextSecondary)
+                }
             }
         }
 
@@ -130,10 +147,10 @@ fun ToolboxScreen(
 
         // ---- recipes -----------------------------------------------------
         TrmxCard(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(Sp.m),
-                   verticalArrangement = Arrangement.spacedBy(Sp.s)) {
+            Column(verticalArrangement = Arrangement.spacedBy(Sp.s)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Recipes (${recipes.size})", fontWeight = FontWeight.Bold)
+                    Text("Recipes (${recipes.size})", style = MaterialTheme.typography.titleMedium,
+                 fontWeight = FontWeight.Bold)
                     Spacer(Modifier.weight(1f))
                     TrmxButton(label = "import",
                                onClick = { importPicker.launch(arrayOf("application/json", "*/*")) },
@@ -162,8 +179,10 @@ fun ToolboxScreen(
             }
         }
 
-        TrmxButton(label = "⛓ Chains — visual pipelines",
-                   onClick = onOpenChains, modifier = Modifier.fillMaxWidth())
+        TrmxButton(label = "Chains — visual pipelines",
+                   leading = { Icon(Icons.Outlined.AccountTree, contentDescription = null) },
+                   onClick = onOpenChains, modifier = Modifier.fillMaxWidth(),
+                   kind = TrmxButtonKind.Secondary)
     }
 
     if (showSubmit) {
@@ -205,25 +224,33 @@ fun ToolboxScreen(
 private fun ToolCard(t: ToolStatus, onOpenTool: (String) -> Unit, onInstall: () -> Unit) {
     TrmxCard(modifier = Modifier.fillMaxWidth(),
              onClick = if (t.installed) ({ onOpenTool(t.schema.id) }) else null) {
-        Column(modifier = Modifier.padding(Sp.m), verticalArrangement = Arrangement.spacedBy(Sp.xs)) {
-            Text(t.schema.name, fontWeight = FontWeight.Bold,
-                 style = MaterialTheme.typography.bodyLarge)
+        Column(verticalArrangement = Arrangement.spacedBy(Sp.xs)) {
+            Text(t.schema.name, style = MaterialTheme.typography.titleSmall,
+                 fontWeight = FontWeight.SemiBold)
             Text(t.schema.description, style = MaterialTheme.typography.bodySmall)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (t.installed) {
                     // UX-audit P2: clean status instead of risk-tier badges —
                     // the tier still drives the RUN confirmation in the form.
-                    Text("● Ready", color = TrmxColors.Running,
-                         style = MaterialTheme.typography.bodySmall,
-                         fontWeight = FontWeight.Medium)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(7.dp).background(TrmxColors.Running, CircleShape))
+                        Spacer(Modifier.width(Sp.xs))
+                        Text("Ready", color = TrmxColors.Running,
+                             style = MaterialTheme.typography.bodySmall,
+                             fontWeight = FontWeight.Medium)
+                    }
                     t.version?.let {
                         Text("  ·  $it", style = MaterialTheme.typography.bodySmall,
                              color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
-                    Text("● Setup required", color = TrmxColors.Queued,
-                         style = MaterialTheme.typography.bodySmall,
-                         fontWeight = FontWeight.Medium)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(7.dp).background(TrmxColors.Queued, CircleShape))
+                        Spacer(Modifier.width(Sp.xs))
+                        Text("Setup required", color = TrmxColors.Queued,
+                             style = MaterialTheme.typography.bodySmall,
+                             fontWeight = FontWeight.Medium)
+                    }
                     Spacer(Modifier.weight(1f))
                     TrmxButton(label = "install", onClick = onInstall)
                 }

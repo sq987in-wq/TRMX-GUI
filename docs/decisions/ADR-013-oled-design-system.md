@@ -69,3 +69,32 @@ visual constants.
   acceptable until the blueprint fidelity pass.
 - Blueprint re-attachment → fidelity pass = Tokens diff + component
   spacing tweaks, no architecture.
+
+---
+
+## Addendum — P4: commercial-grade component rebuild (2026-09-11)
+
+P3 shipped the token + component foundation, but the user verdict was
+"merely swapped hex codes without refactoring component hierarchy."
+P4 rebuilds the presentation layer to commercial grade under an
+explicit 5-point contract:
+
+1. **Material Symbols everywhere** — `material-icons-extended` dep;
+   zero OS emojis as UI icons (including status dots → vector
+   CircleShape, copy glyph → ContentCopy icon).
+2. **Authentic M3 NavigationBar** — black container, 24 dp
+   Outlined/Filled icon pairs, LabelSmall, pill indicator with
+   ice-cyan selected tint (`TrmxNavItemColors`).
+3. **Tool form overhaul** — floating labels on the outline (fixed the
+   `TrmxTextField` label param that was accepted but never forwarded),
+   `#0A0E17` fills, 1 px `#1E293B` borders, FilterChip enums
+   (`TrmxChipColors`), 16 dp grid, sticky 48 dp primary action.
+4. **Chains automation canvas** — vector node tiles + connector lines,
+   exact headline/subtext/CTA copy.
+5. **Card & typography craft** — 16 dp padding baked into `TrmxCard`
+   (a `contentPadding` param keeps special cases explicit);
+   TitleMedium/TitleSmall/BodySmall scale with `#94A3B8` metadata.
+
+Lesson repeated from ADR-012: a shared component is only real when
+screens stop re-specifying spacing — every `Modifier.padding(Sp.m)`
+inside a TrmxCard content block was stripped this round.

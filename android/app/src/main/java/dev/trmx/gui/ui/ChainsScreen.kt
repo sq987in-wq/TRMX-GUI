@@ -16,7 +16,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.Build
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -37,6 +50,7 @@ import dev.trmx.gui.ChainsState
 import dev.trmx.gui.model.JobSummary
 import dev.trmx.gui.model.ToolStatus
 import dev.trmx.gui.tools.ChainPlanner
+import dev.trmx.gui.ui.Tokens.Palette as P
 
 @Composable
 fun ChainsScreen(
@@ -82,33 +96,34 @@ fun ChainsScreen(
                  color = MaterialTheme.colorScheme.error)
         }
 
-        // ---- educational empty state (UX-audit P2) ----------------------
+        // ---- educational empty state: automation canvas (P4) ------------
         if (state.defs.isEmpty() && state.editing == null && state.run == null) {
             TrmxCard(modifier = Modifier.fillMaxWidth()) {
                 Column(
-                    modifier = Modifier.padding(Sp.l),
                     verticalArrangement = Arrangement.spacedBy(Sp.m),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text("Pipelines", style = MaterialTheme.typography.titleLarge,
-                         fontWeight = FontWeight.Bold)
+                    Text("Automate Multi-Step Pipelines",
+                         style = MaterialTheme.typography.titleMedium,
+                         fontWeight = FontWeight.Bold,
+                         textAlign = TextAlign.Center)
                     Text(
-                        "Chain tools into one flow — each step's output feeds the next.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        "Chain Termux tools into reusable workflows with zero shell scripting.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = P.TextSecondary,
                         textAlign = TextAlign.Center)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Sp.m),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = Sp.s),
                     ) {
-                        FlowStep("⬇", "Fetch")
-                        Text("→", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        FlowStep("⚙", "Process")
-                        Text("→", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        FlowStep("📦", "Archive")
+                        PipelineNode(Icons.Outlined.Download, "Ingest")
+                        Connector(Modifier.weight(1f))
+                        PipelineNode(Icons.Outlined.Build, "Transform")
+                        Connector(Modifier.weight(1f))
+                        PipelineNode(Icons.Outlined.SaveAlt, "Output")
                     }
-                    TrmxButton(label = "Create your first pipeline",
-                               onClick = onNew, modifier = Modifier.fillMaxWidth())
+                    TrmxButton(label = "Create First Pipeline",
+                               onClick = onNew, modifier = Modifier.fillMaxWidth().height(48.dp))
                 }
             }
         }
@@ -116,16 +131,15 @@ fun ChainsScreen(
         // ---- live run --------------------------------------------------
         state.run?.let { run ->
             TrmxCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(Sp.m),
-                       verticalArrangement = Arrangement.spacedBy(Sp.s)) {
+                Column(verticalArrangement = Arrangement.spacedBy(Sp.s)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(run.def.title, fontWeight = FontWeight.Bold,
                              modifier = Modifier.weight(1f))
                         Text(when (run.status) {
-                            "RUNNING" -> "▶ RUNNING"
-                            "COMPLETED" -> "✓ COMPLETED"
-                            "FAILED" -> "✗ FAILED"
-                            else -> "⏸ PAUSED"
+                            "RUNNING" -> "RUNNING"
+                            "COMPLETED" -> "COMPLETED"
+                            "FAILED" -> "FAILED"
+                            else -> "PAUSED"
                         }, color = when (run.status) {
                             "RUNNING" -> TrmxColors.Running
                             "COMPLETED" -> TrmxColors.Completed
@@ -188,8 +202,7 @@ fun ChainsScreen(
         // ---- builder ---------------------------------------------------
         state.editing?.let { def ->
             TrmxCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(Sp.m),
-                       verticalArrangement = Arrangement.spacedBy(Sp.s)) {
+                Column(verticalArrangement = Arrangement.spacedBy(Sp.s)) {
                     Text("Building: ${def.title.ifBlank { "untitled chain" }}",
                          fontWeight = FontWeight.Bold)
                     TrmxTextField(value = def.title, onValueChange = onSetTitle,
@@ -208,9 +221,13 @@ fun ChainsScreen(
                                          color = MaterialTheme.colorScheme.tertiary)
                                 }
                             }
-                            TextButton(onClick = { onEditStep(i) }) { Text("✎") }
-                            TextButton(onClick = { onRemoveStep(i) }) {
-                                Text("✕", color = MaterialTheme.colorScheme.error) }
+                            TrmxIconButton(icon = Icons.Outlined.Edit,
+                                           contentDescription = "edit step",
+                                           onClick = { onEditStep(i) })
+                            TrmxIconButton(icon = Icons.Outlined.Close,
+                                           contentDescription = "remove step",
+                                           onClick = { onRemoveStep(i) },
+                                           tint = MaterialTheme.colorScheme.error)
                         }
                     }
                     TrmxButton(label = "+ add step", onClick = { addStepDialog = true },
@@ -223,12 +240,13 @@ fun ChainsScreen(
 
         // ---- saved chains ---------------------------------------------
         if (state.defs.isNotEmpty() && state.editing == null) {
-            Text("Saved chains", fontWeight = FontWeight.Bold)
+            Text("Saved chains", style = MaterialTheme.typography.titleMedium,
+                 fontWeight = FontWeight.Bold)
         }
         state.defs.forEach { def ->
             if (state.editing?.id == def.id) return@forEach
             TrmxCard(modifier = Modifier.fillMaxWidth()) {
-                Row(modifier = Modifier.padding(Sp.m), verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(def.title, style = MaterialTheme.typography.bodyLarge)
                         Text("${def.steps.size} steps: " +
@@ -236,8 +254,10 @@ fun ChainsScreen(
                              style = MaterialTheme.typography.bodySmall,
                              color = MaterialTheme.colorScheme.secondary)
                     }
-                    TrmxButton(label = "▶ run", onClick = { onRun(def) })
-                    TextButton(onClick = { onEditDef(def.id) }) { Text("✎ edit") }
+                    TrmxButton(label = "Run", onClick = { onRun(def) },
+                               leading = { Icon(Icons.Filled.PlayArrow, contentDescription = null,
+                                                tint = P.OnAccent) })
+                    TextButton(onClick = { onEditDef(def.id) }) { Text("edit") }
                     TextButton(onClick = { onDeleteDef(def.id) }) {
                         Text("delete", color = MaterialTheme.colorScheme.error) }
                 }
@@ -267,11 +287,27 @@ fun ChainsScreen(
     }
 }
 
+/** One node of the pipeline illustration: bordered icon tile + label. */
 @Composable
-private fun FlowStep(icon: String, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(icon, fontSize = 22.sp)
-        Text(label, style = MaterialTheme.typography.bodySmall,
-             color = MaterialTheme.colorScheme.secondary)
+private fun PipelineNode(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally,
+           verticalArrangement = Arrangement.spacedBy(Sp.xs)) {
+        androidx.compose.material3.Surface(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+            color = P.FieldFill,
+            border = androidx.compose.foundation.BorderStroke(1.dp, P.BorderStrong),
+        ) {
+            Icon(icon, contentDescription = label, tint = P.Accent,
+                 modifier = Modifier.padding(Sp.m).size(22.dp))
+        }
+        Text(label, style = MaterialTheme.typography.bodySmall, color = P.TextSecondary)
     }
+}
+
+/** Crisp vector connector line between nodes (weight set by the Row). */
+@Composable
+private fun Connector(modifier: Modifier = Modifier) {
+    androidx.compose.foundation.layout.Box(
+        modifier = modifier.height(1.dp).background(P.BorderStrong)
+    )
 }

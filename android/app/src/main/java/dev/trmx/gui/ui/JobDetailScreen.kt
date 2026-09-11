@@ -79,14 +79,13 @@ fun JobDetailScreen(
         val job = state.job
         state.error?.let {
             TrmxCard(modifier = Modifier.fillMaxWidth()) {
-                Text(it, modifier = Modifier.padding(Sp.m),
-                     color = MaterialTheme.colorScheme.error)
+                Text(it, color = MaterialTheme.colorScheme.error)
             }
         }
 
         if (job != null) {
             TrmxCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(Sp.m), verticalArrangement = Arrangement.spacedBy(Sp.xs)) {
+                Column(verticalArrangement = Arrangement.spacedBy(Sp.xs)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         // J-ID: secondary, copyable — one tap for bug reports.
                         CopyableId(state.jobId, modifier = Modifier.weight(1f))
@@ -190,8 +189,9 @@ private fun ArtifactsCard(
 ) {
     val context = LocalContext.current
     TrmxCard(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(Sp.m), verticalArrangement = Arrangement.spacedBy(Sp.s)) {
-            Text("Artifacts", fontWeight = FontWeight.Bold)
+        Column(verticalArrangement = Arrangement.spacedBy(Sp.s)) {
+            Text("Artifacts", style = MaterialTheme.typography.titleMedium,
+                 fontWeight = FontWeight.Bold)
             if (state.loading) {
                 Text("collecting outputs…", style = MaterialTheme.typography.bodySmall,
                      color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -248,13 +248,14 @@ private fun OutputConsole(
     }
 
     TrmxCard(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(Sp.m), verticalArrangement = Arrangement.spacedBy(Sp.s)) {
+        Column(verticalArrangement = Arrangement.spacedBy(Sp.s)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Output", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text("Output", style = MaterialTheme.typography.titleMedium,
+                     fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 val live = output.error == null && !output.ended
                 Text(
                     when {
-                        output.error != null -> "⚠ ${output.error}"
+                        output.error != null -> "${output.error}"
                         output.ended -> "ended"
                         else -> "live"
                     },
@@ -279,7 +280,7 @@ private fun OutputConsole(
                 }
                 TextButton(onClick = { autoScroll = !autoScroll }) {
                     Text(
-                        if (autoScroll) "auto-scroll ✓" else "auto-scroll ✗",
+                        if (autoScroll) "auto-scroll on" else "auto-scroll off",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.secondary)
                 }

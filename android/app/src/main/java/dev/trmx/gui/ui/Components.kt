@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -38,14 +40,18 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -101,6 +107,7 @@ fun TrmxCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     border: Boolean = true,
+    contentPadding: Dp = Tokens.Space.m,   // exactly 16 dp (P4 contract)
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = CardDefaults.cardColors(
@@ -116,14 +123,18 @@ fun TrmxCard(
             shape = shape,
             colors = colors,
             border = stroke,
-        ) { content() }
+        ) {
+            Column(modifier = Modifier.padding(contentPadding), content = content)
+        }
     } else {
         Card(
             modifier = modifier,
             shape = shape,
             colors = colors,
             border = stroke,
-        ) { content() }
+        ) {
+            Column(modifier = Modifier.padding(contentPadding), content = content)
+        }
     }
 }
 
@@ -153,7 +164,7 @@ fun TrmxButton(
             colors = ButtonDefaults.buttonColors(
                 containerColor = P.Accent, contentColor = P.OnAccent,
                 disabledContainerColor = P.SurfaceHigh, disabledContentColor = P.TextMuted),
-        ) { ButtonContent(leading, label) }
+        ) { ButtonContent(leading, label, bold = true) }
 
         TrmxButtonKind.Secondary -> OutlinedButton(
             onClick = onClick, enabled = enabled, modifier = modifier,
@@ -184,12 +195,28 @@ fun TrmxButton(
 }
 
 @Composable
-private fun ButtonContent(leading: (@Composable () -> Unit)?, label: String) {
+private fun ButtonContent(leading: (@Composable () -> Unit)?, label: String,
+                          bold: Boolean = false) {
     if (leading != null) {
         leading()
         Spacer(Modifier.width(Sp.xs))
     }
-    Text(label)
+    Text(label, fontWeight = if (bold) FontWeight.Bold else null)
+}
+
+/** Icon-only button for compact toolbars (up / refresh / overflow). */
+@Composable
+fun TrmxIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    tint: Color = P.TextSecondary,
+) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = modifier) {
+        Icon(icon, contentDescription = contentDescription, tint = tint)
+    }
 }
 
 // ---- TrmxTextField ----------------------------------------------------------
@@ -233,6 +260,7 @@ fun TrmxTextField(
         isError = isError,
         shape = FieldShape,
         colors = TrmxFieldColors(),
+        label = { Text(label) },   // floats ON the outline border (M3) — the P4 fix
         supportingText = supportingText,
         placeholder = placeholder,
         leadingIcon = leadingIcon,
@@ -302,6 +330,18 @@ fun ActionFlowRow(
     }
 }
 
+// ---- navigation --------------------------------------------------------------
+
+/** Active state: pill with deep-contrast container + ice-cyan icon (P4). */
+@Composable
+fun TrmxNavItemColors() = androidx.compose.material3.NavigationBarItemDefaults.colors(
+    selectedIconColor = P.Accent,
+    selectedTextColor = P.Accent,
+    unselectedIconColor = P.TextMuted,
+    unselectedTextColor = P.TextMuted,
+    indicatorColor = P.AccentContainer,
+)
+
 // ---- CopyableId -------------------------------------------------------------
 
 /** Small monospace id line that copies itself on tap. */
@@ -318,10 +358,8 @@ fun CopyableId(id: String, modifier: Modifier = Modifier) {
             fontSize = 11.sp,
             color = P.TextMuted,
         )
-        Text(
-            " ⧉",
-            fontSize = 11.sp,
-            color = P.TextMuted,
-        )
+        Spacer(Modifier.width(Sp.xs))
+        Icon(Icons.Outlined.ContentCopy, contentDescription = "copy",
+             tint = P.TextMuted, modifier = Modifier.size(12.dp))
     }
 }

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,7 +25,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.CreateNewFolder
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.InsertDriveFile
+import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
@@ -52,8 +67,12 @@ import dev.trmx.gui.model.FileEntry
 import dev.trmx.gui.tools.JobLabels
 import dev.trmx.gui.ui.Tokens.Palette as P
 
-private val TYPE_GLYPH = mapOf(
-    "dir" to "📁", "file" to "📄", "symlink" to "🔗", "other" to "•")
+/** Vector icon for an entry type (P4: zero OS emojis). */
+private fun entryIcon(type: String) = when (type) {
+    "dir" -> Icons.Outlined.Folder
+    "symlink" -> Icons.Outlined.Link
+    else -> Icons.Outlined.InsertDriveFile
+}
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -104,7 +123,7 @@ fun FilesScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (pickFile != null) {
-                TrmxButton(label = "← cancel", onClick = onCancelPick,
+                TrmxButton(label = "Cancel", onClick = onCancelPick,
                            kind = TrmxButtonKind.Secondary)
                 Spacer(Modifier.width(Sp.s))
             }
@@ -120,24 +139,40 @@ fun FilesScreen(
         }
 
         TrmxCard(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(Sp.m), verticalArrangement = Arrangement.spacedBy(Sp.s)) {
+            Column(verticalArrangement = Arrangement.spacedBy(Sp.s)) {
                 Text(state.path, fontFamily = FontFamily.Monospace,
                      style = MaterialTheme.typography.bodyLarge)
                 if (pickFile == null) {
                     ActionFlowRow {
-                        TrmxButton(label = "↑", onClick = onUp,
-                                   kind = TrmxButtonKind.Secondary,
-                                   enabled = state.path != "~")
-                        TrmxButton(label = "⟳", onClick = onRefresh,
-                                   kind = TrmxButtonKind.Secondary)
-                        TrmxButton(label = "New folder", onClick = { newDirDialog = true })
-                        TrmxButton(label = "Upload", onClick = { picker.launch(arrayOf("*/*")) })
-                        TrmxButton(label = if (showHidden) "● dotfiles" else "◌ dotfiles",
-                                   onClick = { showHidden = !showHidden },
-                                   kind = TrmxButtonKind.Secondary)
+                        TrmxIconButton(icon = Icons.Outlined.ArrowUpward,
+                                       contentDescription = "up",
+                                       onClick = onUp, enabled = state.path != "~")
+                        TrmxIconButton(icon = Icons.Outlined.Refresh,
+                                       contentDescription = "refresh",
+                                       onClick = onRefresh)
+                        TrmxButton(label = "New folder",
+                                   leading = { Icon(Icons.Outlined.CreateNewFolder,
+                                                    contentDescription = null) },
+                                   onClick = { newDirDialog = true })
+                        TrmxButton(label = "Upload",
+                                   leading = { Icon(Icons.Outlined.Upload,
+                                                    contentDescription = null) },
+                                   onClick = { picker.launch(arrayOf("*/*")) })
+                        TrmxButton(
+                            label = "dotfiles",
+                            leading = {
+                                Icon(
+                                    if (showHidden) Icons.Filled.VisibilityOff
+                                    else Icons.Filled.Visibility,
+                                    contentDescription = null)
+                            },
+                            onClick = { showHidden = !showHidden },
+                            kind = TrmxButtonKind.Secondary)
                     }
                 } else if (pickFile == false) {
-                    TrmxButton(label = "use this folder ✓", onClick = { onPicked(state.path) })
+                    TrmxButton(label = "use this folder",
+                               leading = { Icon(Icons.Filled.Check, contentDescription = null) },
+                               onClick = { onPicked(state.path) })
                 }
                 Text(
                     when (pickFile) {
@@ -146,7 +181,7 @@ fun FilesScreen(
                         else -> "tap a folder to open it · long-press a row for actions"
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary)
+                    color = P.TextSecondary)
                 state.notice?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall,
                          color = MaterialTheme.colorScheme.primary)
@@ -160,8 +195,7 @@ fun FilesScreen(
 
         state.transfer?.let { t ->
             TrmxCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(Sp.m),
-                       verticalArrangement = Arrangement.spacedBy(Sp.s)) {
+                Column(verticalArrangement = Arrangement.spacedBy(Sp.s)) {
                     Text("${t.label} ${t.name}…", style = MaterialTheme.typography.bodyMedium)
                     val total = t.total
                     if (total != null && total > 0) {
@@ -191,8 +225,7 @@ fun FilesScreen(
                 Text("loading…")
             }
             state.entries.isEmpty() && state.error != null -> TrmxCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(Sp.m),
-                       verticalArrangement = Arrangement.spacedBy(Sp.s)) {
+                Column(verticalArrangement = Arrangement.spacedBy(Sp.s)) {
                     Text(state.error, color = MaterialTheme.colorScheme.error)
                     TrmxButton(label = "retry", onClick = onRefresh,
                                kind = TrmxButtonKind.Secondary)
@@ -234,11 +267,12 @@ fun FilesScreen(
                             )
                             .padding(vertical = 8.dp),
                     ) {
-                        Text(TYPE_GLYPH[entry.type] ?: "•",
-                             modifier = Modifier.width(34.dp), fontSize = 18.sp,
-                             color = P.TextSecondary)
+                        Icon(entryIcon(entry.type), contentDescription = entry.type,
+                             tint = P.TextSecondary, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(Sp.m))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(entry.name, style = MaterialTheme.typography.bodyLarge)
+                            Text(entry.name, style = MaterialTheme.typography.titleSmall,
+                                 fontWeight = FontWeight.SemiBold)
                             // Human metadata only (P2): "Aug 28 · 3.5 KB".
                             // Raw ISO stamps, permissions and symlink targets
                             // live in the details sheet now.
@@ -249,7 +283,8 @@ fun FilesScreen(
                                 color = P.TextMuted,
                             )
                         }
-                        Text("⋮", color = P.TextMuted)
+                        Icon(Icons.Outlined.MoreVert, contentDescription = "actions",
+                             tint = P.TextMuted, modifier = Modifier.size(18.dp))
                     }
                 }
             }
@@ -376,7 +411,8 @@ fun FilesScreen(
                 verticalArrangement = Arrangement.spacedBy(Sp.s),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(TYPE_GLYPH[entry.type] ?: "•", fontSize = 20.sp)
+                    Icon(entryIcon(entry.type), contentDescription = null,
+                         tint = P.Accent, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(Sp.s))
                     Text(
                         entry.name,

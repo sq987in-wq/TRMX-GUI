@@ -820,7 +820,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     openToolForm(toolId)
                 }
                 else -> _dashboard.update {
-                    it.copy(notice = "tool unavailable: $toolId — try Tools → scan ⟳")
+                    it.copy(notice = "tool unavailable: $toolId — try Tools → Scan")
                 }
             }
         }

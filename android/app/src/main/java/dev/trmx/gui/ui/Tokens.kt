@@ -23,16 +23,17 @@ object Tokens {
 
     /** Ground + elevated surfaces (OLED). */
     object Palette {
-        val Background = Color(0xFF000000)     // true OLED black
-        val Surface = Color(0xFF0A0E17)        // cards / containers
-        val SurfaceHigh = Color(0xFF121824)    // input fields, sheets
+        val Background = Color(0xFF000000)     // true OLED black (ground)
+        val Surface = Color(0xFF0B111A)        // cards (P4 contract)
+        val FieldFill = Color(0xFF0A0E17)      // input field fill (P4 contract)
+        val SurfaceHigh = Color(0xFF121824)    // sheets / secondary surfaces
         val SurfaceHighest = Color(0xFF1A2232) // menus, pressed states
-        val Border = Color(0xFF1C2436)         // subtle 1 px outlines
+        val Border = Color(0xFF1E293B)         // 1 px outlines (P4 contract)
         val BorderStrong = Color(0xFF2A3550)   // focused/active outlines
 
         /** Text. */
         val TextPrimary = Color(0xFFFFFFFF)    // crisp white
-        val TextSecondary = Color(0xFFA9B4C6)  // muted slate
+        val TextSecondary = Color(0xFF94A3B8)  // muted slate (P4 contract)
         val TextMuted = Color(0xFF5F6B80)      // faint metadata
 
         /** Electric Ice-Cyan — focus + primary actions. */

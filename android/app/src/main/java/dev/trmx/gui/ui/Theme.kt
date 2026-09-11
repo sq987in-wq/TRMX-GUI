@@ -106,18 +106,19 @@ object TrmxColors {
  */
 @Composable
 fun TrmxFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-    focusedTextColor = MaterialTheme.colorScheme.onSurface,
-    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-    focusedBorderColor = MaterialTheme.colorScheme.primary,
-    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-    focusedLabelColor = MaterialTheme.colorScheme.primary,
-    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    focusedSupportingTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    unfocusedSupportingTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    cursorColor = MaterialTheme.colorScheme.primary,
+    // P4 contract: subtle #0A0E17 fill, 1 px #1E293B outline, ice-cyan focus.
+    focusedContainerColor = P.FieldFill,
+    unfocusedContainerColor = P.FieldFill,
+    disabledContainerColor = P.FieldFill,
+    focusedTextColor = P.TextPrimary,
+    unfocusedTextColor = P.TextPrimary,
+    focusedBorderColor = P.Accent,
+    unfocusedBorderColor = P.Border,
+    focusedLabelColor = P.Accent,
+    unfocusedLabelColor = P.TextSecondary,
+    focusedSupportingTextColor = P.TextSecondary,
+    unfocusedSupportingTextColor = P.TextSecondary,
+    cursorColor = P.Accent,
 )
 
 @Composable

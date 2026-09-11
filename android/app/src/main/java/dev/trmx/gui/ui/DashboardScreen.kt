@@ -11,16 +11,28 @@ package dev.trmx.gui.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Movie
+import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Terminal
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -31,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.trmx.gui.DashboardState
@@ -99,10 +112,10 @@ private fun StatusPill(state: DashboardState, onOpenDiagnostics: () -> Unit) {
     val connected = state.error == null
     val running = state.info?.load?.jobs_running ?: 0
     val (label, color) = when {
-        !connected -> "● connection error" to P.Danger
-        state.refreshing -> "○ refreshing" to P.Accent
-        running > 0 -> "● $running running" to P.Accent
-        else -> "● connected" to P.Steel
+        !connected -> "connection error" to P.Danger
+        state.refreshing -> "refreshing" to P.Accent
+        running > 0 -> "$running running" to P.Accent
+        else -> "connected" to P.Steel
     }
     Surface(
         shape = RoundedCornerShape(50),
@@ -110,13 +123,20 @@ private fun StatusPill(state: DashboardState, onOpenDiagnostics: () -> Unit) {
         border = BorderStroke(1.dp, color.copy(alpha = 0.45f)),
         modifier = Modifier.clickable(onClick = onOpenDiagnostics),
     ) {
-        Text(
-            "$label  ⚙",
-            color = color,
-            fontWeight = FontWeight.Medium,
-            fontSize = 12.sp,
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-        )
+        ) {
+            // status dot: vector circle, not a glyph (P4)
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .background(color, CircleShape)
+            )
+            Spacer(Modifier.width(Sp.s))
+            Icon(Icons.Outlined.Settings, contentDescription = "diagnostics",
+                 tint = color, modifier = Modifier.size(14.dp))
+        }
     }
 }
 
@@ -124,10 +144,7 @@ private fun StatusPill(state: DashboardState, onOpenDiagnostics: () -> Unit) {
 @Composable
 private fun HeroWorkspace() {
     TrmxCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(Sp.l),
-            verticalArrangement = Arrangement.spacedBy(Sp.xs),
-        ) {
+        Column(verticalArrangement = Arrangement.spacedBy(Sp.xs)) {
             Text(
                 "Your Linux runtime,\non this phone.",
                 style = MaterialTheme.typography.headlineSmall,
@@ -153,21 +170,25 @@ private fun IntentGrid(
     Column(verticalArrangement = Arrangement.spacedBy(Sp.s)) {
         Row(horizontalArrangement = Arrangement.spacedBy(Sp.s)) {
             IntentCard(
-                icon = "⬇", title = "Download media", sub = "yt-dlp · video & audio",
+                icon = Icons.Outlined.Download, title = "Download media",
+                sub = "yt-dlp · video & audio",
                 modifier = Modifier.weight(1f),
             ) { onOpenIntent("yt-dlp") }
             IntentCard(
-                icon = "▶", title = "Convert / transcode", sub = "ffmpeg · any format",
+                icon = Icons.Outlined.Movie, title = "Convert / transcode",
+                sub = "ffmpeg · any format",
                 modifier = Modifier.weight(1f),
             ) { onOpenIntent("ffmpeg") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Sp.s)) {
             IntentCard(
-                icon = "⚡", title = "Run a command", sub = "any argv · scripts",
+                icon = Icons.Outlined.Terminal, title = "Run a command",
+                sub = "any argv · scripts",
                 modifier = Modifier.weight(1f),
             ) { onOpenCustom() }
             IntentCard(
-                icon = "◎", title = "Start a service", sub = "serve a folder over HTTP",
+                icon = Icons.Outlined.Public, title = "Start a service",
+                sub = "serve a folder over HTTP",
                 modifier = Modifier.weight(1f),
             ) { onOpenIntent("http-server") }
         }
@@ -176,7 +197,7 @@ private fun IntentGrid(
 
 @Composable
 private fun IntentCard(
-    icon: String,
+    icon: ImageVector,
     title: String,
     sub: String,
     modifier: Modifier = Modifier,
@@ -186,13 +207,11 @@ private fun IntentCard(
         modifier = modifier.fillMaxWidth(),
         onClick = onClick,
     ) {
-        Column(
-            modifier = Modifier.padding(Sp.m),
-            verticalArrangement = Arrangement.spacedBy(Sp.xs),
-        ) {
-            Text(icon, fontSize = 20.sp)
-            Text(title, fontWeight = FontWeight.Medium,
-                 style = MaterialTheme.typography.bodyLarge)
+        Column(verticalArrangement = Arrangement.spacedBy(Sp.xs)) {
+            Icon(icon, contentDescription = null, tint = P.Accent,
+                 modifier = Modifier.size(22.dp))
+            Text(title, style = MaterialTheme.typography.titleSmall,
+                 fontWeight = FontWeight.SemiBold)
             Text(sub, style = MaterialTheme.typography.bodySmall,
                  color = P.TextSecondary)
         }
@@ -203,10 +222,7 @@ private fun IntentCard(
 @Composable
 private fun QuickRunCard(recipes: List<Recipe>, onOpenRecipe: (String) -> Unit) {
     TrmxCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(Sp.m),
-            verticalArrangement = Arrangement.spacedBy(Sp.s),
-        ) {
+        Column(verticalArrangement = Arrangement.spacedBy(Sp.s)) {
             Text("Quick run", fontWeight = FontWeight.Bold,
                  style = MaterialTheme.typography.titleMedium)
             recipes.take(4).forEach { r ->
@@ -216,10 +232,12 @@ private fun QuickRunCard(recipes: List<Recipe>, onOpenRecipe: (String) -> Unit) 
                         .fillMaxWidth()
                         .clickable { onOpenRecipe(r.id) },
                 ) {
-                    Text("▸", color = P.Accent)
+                    Icon(Icons.Filled.PlayArrow, contentDescription = null,
+                         tint = P.Accent, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(Sp.s))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(r.title, style = MaterialTheme.typography.bodyLarge,
+                        Text(r.title, style = MaterialTheme.typography.titleSmall,
+                             fontWeight = FontWeight.SemiBold,
                              maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(r.toolId, style = MaterialTheme.typography.bodySmall,
                              color = P.TextSecondary)
@@ -238,15 +256,12 @@ private fun TaskOutcomeCard(job: JobSummary, onJobClick: (String) -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         onClick = { onJobClick(job.job_id) },
     ) {
-        Column(
-            modifier = Modifier.padding(Sp.m),
-            verticalArrangement = Arrangement.spacedBy(Sp.xs),
-        ) {
+        Column(verticalArrangement = Arrangement.spacedBy(Sp.xs)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     JobLabels.taskLabel(job),
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),

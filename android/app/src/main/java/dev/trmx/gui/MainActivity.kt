@@ -9,8 +9,23 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.outlined.AccountTree
+import androidx.compose.material.icons.outlined.Build
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,6 +46,7 @@ import dev.trmx.gui.ui.JobDetailScreen
 import dev.trmx.gui.ui.SubmitDialog
 import dev.trmx.gui.ui.ToolFormScreen
 import dev.trmx.gui.ui.ToolboxScreen
+import dev.trmx.gui.ui.TrmxNavItemColors
 import dev.trmx.gui.ui.TRMXTheme
 import dev.trmx.gui.ui.WizardScreen
 import dev.trmx.gui.wizard.WizardStep
@@ -188,30 +204,65 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                 BackHandler(enabled = screen != Screen.DASHBOARD) { screen = Screen.DASHBOARD }
                 Scaffold(
                     bottomBar = {
-                        NavigationBar {
+                        // Commercial M3 NavigationBar (P4): OLED black,
+                        // 24 dp vector icons (outlined -> filled when
+                        // selected), LabelSmall, pill indicator with deep
+                        // contrast container + ice-cyan active tint.
+                        NavigationBar(
+                            containerColor = Color(0xFF000000),
+                            tonalElevation = 0.dp,
+                        ) {
                             NavigationBarItem(
                                 selected = screen == Screen.DASHBOARD,
                                 onClick = { screen = Screen.DASHBOARD },
-                                icon = { Text("▣") },
-                                label = { Text("Home") })
+                                icon = {
+                                    Icon(
+                                        if (screen == Screen.DASHBOARD) Icons.Filled.Home
+                                        else Icons.Outlined.Home,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(24.dp))
+                                },
+                                label = { Text("Home", style = MaterialTheme.typography.labelSmall) },
+                                colors = TrmxNavItemColors())
                             NavigationBarItem(
                                 selected = screen == Screen.FILES,
                                 onClick = {
                                     vm.clearFilesNotice()
                                     screen = Screen.FILES
                                 },
-                                icon = { Text("📁") },
-                                label = { Text("Files") })
+                                icon = {
+                                    Icon(
+                                        if (screen == Screen.FILES) Icons.Filled.Folder
+                                        else Icons.Outlined.Folder,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(24.dp))
+                                },
+                                label = { Text("Files", style = MaterialTheme.typography.labelSmall) },
+                                colors = TrmxNavItemColors())
                             NavigationBarItem(
                                 selected = screen == Screen.TOOLBOX,
                                 onClick = { screen = Screen.TOOLBOX },
-                                icon = { Text("🧰") },
-                                label = { Text("Tools") })
+                                icon = {
+                                    Icon(
+                                        if (screen == Screen.TOOLBOX) Icons.Filled.Build
+                                        else Icons.Outlined.Build,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(24.dp))
+                                },
+                                label = { Text("Tools", style = MaterialTheme.typography.labelSmall) },
+                                colors = TrmxNavItemColors())
                             NavigationBarItem(
                                 selected = screen == Screen.CHAINS,
                                 onClick = { screen = Screen.CHAINS },
-                                icon = { Text("⛓") },
-                                label = { Text("Chains") })
+                                icon = {
+                                    Icon(
+                                        if (screen == Screen.CHAINS) Icons.Filled.AccountTree
+                                        else Icons.Outlined.AccountTree,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(24.dp))
+                                },
+                                label = { Text("Chains", style = MaterialTheme.typography.labelSmall) },
+                                colors = TrmxNavItemColors())
                         }
                     },
                 ) { padding ->

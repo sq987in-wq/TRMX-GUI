@@ -6,6 +6,35 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Changed — UX-audit P4: commercial-grade component rebuild (2026-09-11, app-only, ADR-013 addendum)
+- **Zero OS emojis, anywhere.** Every glyph icon replaced with Material
+  Symbols vectors (`material-icons-extended`): navigation, file rows,
+  path/secret field actions, toolbar buttons, status dots (vector
+  CircleShape), copy affordance, chain builder actions. Typographic
+  punctuation in copy (· — →) retained.
+- **Navigation rebuilt as authentic M3 NavigationBar**: OLED-black
+  container, 24 dp Outlined→Filled icon pairs (Home/Folder/Build/
+  AccountTree), LabelSmall labels, elongated pill active indicator
+  (ice-cyan icon on deep-contrast container).
+- **Tool form rebuilt**: labels float ON the field outline (M3), enums
+  as FilterChips (FieldFill container, cyan active), helper text 4 dp
+  below the field, 16 dp grid, single primary action — a sticky
+  full-width 48 dp ice-cyan Run button always visible without
+  scrolling; save-recipe promoted to the top bar.
+- **Chains empty state = automation canvas**: vector node tiles
+  (Ingest → Transform → Output) linked by connector lines under
+  "Automate Multi-Step Pipelines" / "Chain Termux tools into reusable
+  workflows with zero shell scripting." / "Create First Pipeline".
+- **Craft pass**: cards exactly `#0B111A` + 1 px `#1E293B` + 16 dp
+  padding (baked into TrmxCard, inner paddings stripped);
+  TitleMedium 16 sp bold / TitleSmall 14 sp semibold / BodySmall
+  12 sp `#94A3B8` applied across Dashboard, Toolbox, Files, Job
+  detail, Diagnostics.
+- Root bug fixed along the way: `TrmxTextField` accepted `label` but
+  never forwarded it to `OutlinedTextField` (detached labels).
+- Presentation-tier only; bridge/TRMX-P/1/FormEngine semantics
+  untouched; JVM tests untouched.
+
 ### Changed — UX-audit P3: OLED design system — Tokens + Trmx components (2026-09-11, app-only, ADR-013)
 - **Tokens** (new): single source of truth — true-OLED `#000000` ground,
   `#0A0E17`/`#121824` elevated surfaces with 1 dp outlines, Electric

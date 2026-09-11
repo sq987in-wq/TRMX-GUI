@@ -388,3 +388,53 @@ install in place. Presentation-tier only; all behavior unchanged.
 Screenshots + which screen. If any green/amber sneaks back or a field
 renders light, name the screen — every constant lives in Tokens.kt, so
 fixes are surgical.
+
+---
+
+## Round 4 — UX-audit P4 commercial-grade rebuild (2026-09-11)
+
+APK from this round's CI run (check the run page for the artifact).
+
+### Zero emojis / vector icons
+- [ ] Bottom navigation shows vector icons (Home, Folder, Tools-wrench,
+      Chains-tree); the active tab is FILLED with an ice-cyan tint on a
+      pill indicator, inactive tabs are outlined. No text glyphs.
+- [ ] Files: every row has a vector folder/file/link icon; toolbar uses
+      vector Up/Refresh icons; New folder / Upload buttons carry vector
+      leading icons; row actions menu is a ⋮ vector icon.
+- [ ] Tool form: path fields show a vector folder button, secrets a
+      vector eye/eye-off. No 📁👁 anywhere.
+- [ ] Copy buttons (job ids) show a vector copy icon.
+
+### NavigationBar (M3)
+- [ ] Bar is pure black, no elevation tint, thin top border.
+- [ ] Labels are small (11 sp), icon 24 dp.
+- [ ] Switching tabs animates the pill indicator between icons.
+
+### Tool form
+- [ ] Field labels sit ON the field outline and float up when typing.
+- [ ] Field fill is near-black; focus border turns ice-cyan.
+- [ ] Enum args render as chips; the selected chip is cyan-tinted.
+- [ ] Helper/error text sits directly under its field (4 dp).
+- [ ] A full-width ice-cyan RUN button stays pinned at the bottom —
+      visible WITHOUT scrolling even on long forms; label is bold
+      black. Save-recipe star is in the top bar.
+
+### Chains empty state
+- [ ] With no pipelines: headline "Automate Multi-Step Pipelines",
+      subtext "Chain Termux tools into reusable workflows with zero
+      shell scripting.", three vector node tiles (Ingest → Transform →
+      Output) joined by connector lines, CTA "Create First Pipeline".
+
+### Craft
+- [ ] Cards have uniform 16 dp inner padding everywhere (no tight
+      cards, no double padding).
+- [ ] Metadata lines are muted slate; titles are 14–16 sp semibold.
+- [ ] Status pills (Home) use a small colored dot + text, not glyphs.
+
+### Regression invariants (unchanged behavior)
+- [ ] Int/float args send native numbers (check preview strip).
+- [ ] Errors appear only after touching a field.
+- [ ] Unsafe tools still show the RUN confirmation dialog.
+- [ ] Dotfiles hidden by default; Files details sheet works.
+- [ ] Recipes/chains persist across app restart.
