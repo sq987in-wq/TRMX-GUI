@@ -274,6 +274,58 @@ data class AutostartRequest(val enabled: Boolean)
 @Serializable
 data class ServiceAck(val ok: Boolean = false, val id: String = "")
 
+// ---- AI backend config (protocol 1.1, §15, bridge v0.5.1+) ------------------
+
+/** GET /v1/ai/config element: MASKED view — the raw key never crosses the wire. */
+@Serializable
+data class AiCliConfig(
+    val command: List<String> = emptyList(),
+    val timeout_s: Int = 0,
+)
+
+@Serializable
+data class AiHttpConfig(
+    val provider: String = "",
+    val endpoint: String = "",
+    val model: String = "",
+    val api_key_set: Boolean = false,
+    val api_key_env: String? = null,
+    val timeout_s: Int = 0,
+)
+
+@Serializable
+data class AiConfig(
+    val exists: Boolean = false,
+    val mode: String = "cli",          // cli | http_api
+    val cli: AiCliConfig? = null,
+    val http_api: AiHttpConfig? = null,
+)
+
+/** POST /v1/ai/config body: merge-patch; null = keep the saved value. */
+@Serializable
+data class AiCliUpdate(
+    val command: List<String>? = null,
+    val timeout_s: Int? = null,
+)
+
+@Serializable
+data class AiHttpUpdate(
+    val provider: String? = null,
+    val endpoint: String? = null,
+    val model: String? = null,
+    /** tri-state: null = keep the saved key, "" = clear, non-empty = set */
+    val api_key: String? = null,
+    val api_key_env: String? = null,
+    val timeout_s: Int? = null,
+)
+
+@Serializable
+data class AiConfigUpdate(
+    val mode: String? = null,
+    val cli: AiCliUpdate? = null,
+    val http_api: AiHttpUpdate? = null,
+)
+
 /** GET /v1/tools element: ToolStatus (§7.1). */
 @Serializable
 data class ToolStatus(

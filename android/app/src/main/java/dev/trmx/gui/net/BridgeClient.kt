@@ -11,6 +11,8 @@ package dev.trmx.gui.net
  * OkHttp never sends an Origin header (that would be 403 ORIGIN_DENIED).
  */
 
+import dev.trmx.gui.model.AiConfig
+import dev.trmx.gui.model.AiConfigUpdate
 import dev.trmx.gui.model.AutostartRequest
 import dev.trmx.gui.model.CancelRequest
 import dev.trmx.gui.model.ErrorEnvelope
@@ -224,6 +226,19 @@ class BridgeClient(
         }
 
     // ---- internals -----------------------------------------------------
+
+    // ---- AI backend config (protocol 1.1, §15) -----------------------------
+
+    suspend fun getAiConfig(): BridgeResult<AiConfig> =
+        get("/v1/ai/config") { body, _ ->
+            jsonFormat.decodeFromString(AiConfig.serializer(), body)
+        }
+
+    suspend fun updateAiConfig(request: AiConfigUpdate): BridgeResult<AiConfig> =
+        call("POST", "/v1/ai/config",
+             jsonFormat.encodeToString(AiConfigUpdate.serializer(), request).toRequestBody(JSON)) { body, _ ->
+            jsonFormat.decodeFromString(AiConfig.serializer(), body)
+        }
 
     // ---- services (protocol 1.1, §14) -------------------------------------
 

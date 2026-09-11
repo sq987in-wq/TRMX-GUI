@@ -558,3 +558,33 @@ phone runs bridge v0.5.0 (`Diagnostics → Bridge` version).
 ### Regression invariants (unchanged behavior)
 - [ ] Normal tool jobs, chains, AI builder, files all work as before.
 - [ ] Both python + JVM suites green in CI for this commit.
+
+---
+
+## Round 8 — native AI backend configuration (2026-09-11)
+
+Update the backend first so the phone runs bridge v0.5.1
+(Diagnostics → Bridge version).
+
+### Editor
+- [ ] Schema Builder → tune icon in the header → "AI Backend" editor
+      opens showing the CURRENT config (mode + values from the phone).
+- [ ] Mode chips: "Cloud API" / "Offline (Ollama)" switch the form.
+- [ ] Cloud: provider chips (groq/openai/gemini/openai_compatible),
+      Model + Endpoint fields, masked API key field with the eye
+      toggle. Saving with a key shows "backend saved".
+- [ ] Reopen the editor: the key field says a key is saved and shows
+      NOTHING of it; leave it blank + Save → key still works (kept).
+- [ ] "forget saved key" → Save → field reads "not saved yet";
+      `~/.trmx/ai.json` on the phone has an empty api_key (check in
+      Files — permissions still 600/rw-------).
+- [ ] Offline: Command field (e.g. `ollama run llama3.2`) — Save flips
+      the mode; a Generate run uses ollama again.
+- [ ] openai_compatible without an endpoint → clear validation error,
+      nothing written.
+- [ ] Before updating the bridge: the editor shows "needs bridge
+      v0.5.1+ — update the backend first" (no crash).
+
+### End-to-end
+- [ ] Full switch flow: set Groq + key in the app → Generate completes
+      via the cloud → switch back to Offline → Generate uses ollama.

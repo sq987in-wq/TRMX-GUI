@@ -9,6 +9,15 @@ backend is interchangeable, the safety rules are not.
 | `"cli"` | offline / local device, privacy-first | needs a local model runner (multi-GB models on device storage) |
 | `"http_api"` | you have internet and want lightweight calls | needs an API key; prompts leave the device |
 
+**Native configuration (bridge v0.5.1+, protocol 1.1 §15):** the app
+edits this file for you — Schema Builder → the tune icon in the header →
+mode selector, provider/model/endpoint fields and a masked API-key field,
+saved via `GET/POST /v1/ai/config`. The key never crosses the API in the
+clear: reading returns only `api_key_set`, saving accepts *keep*
+(leave blank) / *set* / *forget* (clear). Hand-editing in Termux remains
+fully supported — the file is the source of truth, the app is just a
+nicer editor.
+
 The file is written automatically (mode `cli`, documented template) the
 first time `trmx-ai` runs without one. Keep it private — it may hold an
 API key: `chmod 600 ~/.trmx/ai.json` (the wrapper does this for the

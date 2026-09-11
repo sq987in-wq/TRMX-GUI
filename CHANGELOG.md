@@ -6,6 +6,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Added — native AI backend configuration (bridge v0.5.1, protocol 1.1 §15)
+- **`GET/POST /v1/ai/config`**: edit `~/.trmx/ai.json` from the app
+  instead of hand-editing in Termux. GET returns a MASKED, normalized
+  view (`api_key_set` — the raw key never crosses the API); POST is a
+  merge-patch (unknown keys/`_help`/timeouts survive), strictly
+  validated, written atomically at 0600, audit-logged (mode + provider
+  only). `api_key` tri-state: null/absent keeps, `""` clears, value
+  sets. Corrupt file → 500 with a fix-it hint (never silently
+  overwritten).
+- **App — backend editor on the Schema Builder screen** (P4 components
+  only, behind a header action): mode selector FilterChips ("Cloud
+  API" / "Offline (Ollama)"), provider chips (groq/openai/gemini/
+  openai_compatible), model/endpoint fields, masked API-key field with
+  reveal + keep/forget semantics, offline command field, sticky 48 dp
+  Save; older bridges surface an "update the backend" hint (404).
+- Tests: test_ai_config.py 13 (masking, tri-state, merge-preservation,
+  legacy normalization, validation refusals, 0600, corrupt-file 500);
+  AiConfigWireTest 5 (fixture-locked GET, tri-state encoding, typed 404).
+- Fixtures: `ai.config.response.json` · `ai.config.request.json` (§15).
+
 ### Added — Services milestone: protocol 1.1 service registry (2026-09-11, ADR-015)
 - **Bridge v0.5.0 — `~/.trmx/services/*.json` definitions** (id/name/
   tool/args/autostart) running REGISTRY TOOLS: start submits a normal

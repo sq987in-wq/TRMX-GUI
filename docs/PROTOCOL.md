@@ -426,7 +426,35 @@ Events: `service.updated` carries the full status object on create/replace/start
 
 Autostart: after boot reconciliation (§3.6), definitions with `autostart: true` are started best-effort; a failure is audited and skipped, never fatal to the bridge.
 
-## 15. Fixture index
+## 15. AI backend configuration (protocol 1.1, additive — bridge ≥ 0.5.1)
+
+Capability: route presence (older bridges 404). The file is trmx-ai's (`~/.trmx/ai.json`, see docs/AI-CONFIG.md); the bridge only reads/validates/writes it for the app — trmx-ai stays the sole consumer.
+
+**`GET /v1/ai/config`** — masked, normalized view (legacy flat configs folded in):
+
+```json
+{
+  "exists": true,
+  "mode": "http_api",
+  "cli": { "command": ["ollama", "run", "llama3.2"], "timeout_s": 180 },
+  "http_api": { "provider": "groq", "endpoint": "", "model": "llama-3.3-70b-versatile",
+                "api_key_set": true, "api_key_env": "GROQ_API_KEY", "timeout_s": 120 }
+}
+```
+
+The raw API key **never** crosses the API — `api_key_set` is the only key state on the wire.
+
+**`POST /v1/ai/config`** — merge-patch onto the existing file (unknown keys like `_help` and untouched blocks survive), strict validation, atomic write at mode 0600, audit-logged (mode + provider only). Body fields (all optional; `null` = keep existing):
+
+- `mode`: `"cli" | "http_api"`
+- `cli`: `{ "command"?: [string], "timeout_s"?: number }`
+- `http_api`: `{ "provider"?: openai|groq|gemini|openai_compatible, "endpoint"?: string,
+  "model"?: string, "api_key_env"?: string, "timeout_s"?: number }`
+- `http_api.api_key` is **tri-state**: absent/`null` keeps the saved key, `""` clears it, non-empty sets it.
+
+Validation of the FINAL config: `cli.command` a non-empty string list; in `http_api` mode a non-empty `model` is required and `openai_compatible` additionally requires `endpoint`; timeouts positive. Violations → `400 VALIDATION_FAILED` (nothing written). An unparsable existing file → `500 INTERNAL` with a fix-it-in-Termux hint (fail loud, never silently overwrite).
+
+## 16. Fixture index
 
 Shared contract fixtures live in [`fixtures/v1/`](../fixtures/v1/) and are normative:
 
@@ -444,6 +472,7 @@ Shared contract fixtures live in [`fixtures/v1/`](../fixtures/v1/) and are norma
 | `files.ops.request.json` | §6.3 |
 | `tool.schema.yt-dlp.json` | §7.2 |
 | `services.def.request.json` · `services.list.response.json` | §14 |
+| `ai.config.response.json` · `ai.config.request.json` | §15 |
 | `error.response.json` | §10 |
 
 *End of TRMX-P/1 draft. Reviewing this document is the Phase 1 exit gate; Phase 2 (bridge PoC) starts only after sign-off.*

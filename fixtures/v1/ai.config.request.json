@@ -1,0 +1,10 @@
+{
+  "mode": "http_api",
+  "http_api": {
+    "provider": "groq",
+    "endpoint": "",
+    "model": "llama-3.3-70b-versatile",
+    "api_key": "sk-example-key",
+    "api_key_env": "GROQ_API_KEY"
+  }
+}

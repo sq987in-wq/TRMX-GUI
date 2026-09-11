@@ -16,6 +16,7 @@ Serves a subset of TRMX-P/1 (docs/PROTOCOL.md) on 127.0.0.1:
   GET/POST /v1/services                service definitions + live status (§14, protocol 1.1)
   GET/DELETE /v1/services/{id}         one service / remove definition (§14)
   POST /v1/services/{id}/start|stop|restart|autostart   lifecycle (§14)
+  GET/POST /v1/ai/config               AI backend config, masked (protocol 1.1)
 
 Deliberately NOT in this PoC (later phases, see docs/decisions/ADR-004):
   tools/file endpoints, tool-schema argv synthesis, progress regex,
@@ -58,7 +59,7 @@ from collections import deque
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 PROTOCOL_VERSIONS = [1]
 
 LOG = logging.getLogger("trmx-bridge")
@@ -1698,6 +1699,21 @@ class ServiceRegistry:
                 self.store.audit("service.autostart", f"{sid} FAILED: {e.message}")
 
 
+# --------------------------------------------------------------------------- AI backend config (protocol 1.1)
+
+# Mirrors trmx-ai's defaults/template (docs/AI-CONFIG.md). The bridge never
+# interprets the config — it only reads/validates/writes the file for the
+# app; trmx-ai remains the sole consumer.
+AI_PROVIDERS = ("openai", "groq", "gemini", "openai_compatible")
+AI_DEFAULT_CONFIG = {
+    "mode": "cli",
+    "cli": {"command": ["ollama", "run", "llama3.2"], "timeout_s": 180},
+    "http_api": {"provider": "groq", "endpoint": "", "api_key": "",
+                 "api_key_env": "GROQ_API_KEY", "model": "llama-3.3-70b-versatile",
+                 "timeout_s": 120},
+}
+
+
 class BridgeApp:
     """HTTP server + routing + auth for TRMX-P/1 (PoC subset)."""
 
@@ -1739,6 +1755,9 @@ class BridgeApp:
             ("POST", re.compile(r"^/v1/services/([A-Za-z0-9._-]+)/stop$"), self.h_service_stop),
             ("POST", re.compile(r"^/v1/services/([A-Za-z0-9._-]+)/restart$"), self.h_service_restart),
             ("POST", re.compile(r"^/v1/services/([A-Za-z0-9._-]+)/autostart$"), self.h_service_autostart),
+            # AI backend config (protocol 1.1; the file is trmx-ai's, see docs/AI-CONFIG.md)
+            ("GET", re.compile(r"^/v1/ai/config$"), self.h_ai_config_get),
+            ("POST", re.compile(r"^/v1/ai/config$"), self.h_ai_config_post),
         ]
 
     # -- connection handling ----------------------------------------------
@@ -2487,6 +2506,156 @@ class BridgeApp:
             raise BridgeError(400, "VALIDATION_FAILED",
                               "body must be {\"enabled\": boolean}", field="enabled")
         return JsonResponse(self.services.set_autostart(m.group(1), enabled))
+
+    # -- AI backend config (protocol 1.1) --------------------------------------
+    # GET/POST ~/.trmx/ai.json for the app's native config UI. The raw API
+    # key NEVER crosses this API: responses carry api_key_set only. POST
+    # merges onto the existing file (unknown keys like _help survive),
+    # validates strictly, writes atomically at 0600.
+
+    def _ai_config_path(self) -> Path:
+        return self.home / "ai.json"
+
+    def _ai_read_raw(self) -> dict | None:
+        p = self._ai_config_path()
+        if not p.is_file():
+            return None
+        try:
+            raw = json.loads(p.read_text(encoding="utf-8"))
+        except Exception as e:  # noqa: BLE001
+            raise BridgeError(500, "INTERNAL",
+                              f"~/.trmx/ai.json is not valid JSON ({e}) — fix or "
+                              "remove the file in Termux") from e
+        if not isinstance(raw, dict):
+            raise BridgeError(500, "INTERNAL", "~/.trmx/ai.json must be a JSON object")
+        return raw
+
+    def _ai_config_view(self, raw: dict, exists: bool) -> dict:
+        """Masked, normalized view for the wire (legacy flat form folded in)."""
+        mode = raw.get("mode")
+        if mode not in ("cli", "http_api"):
+            mode = "http_api" if ("http_api" in raw or "provider" in raw) else "cli"
+        cli = raw.get("cli") if isinstance(raw.get("cli"), dict) else {}
+        command = cli.get("command") or raw.get("command") \
+            or AI_DEFAULT_CONFIG["cli"]["command"]
+        http = raw.get("http_api") if isinstance(raw.get("http_api"), dict) else {}
+        d = AI_DEFAULT_CONFIG["http_api"]
+        try:
+            c_timeout = int(cli.get("timeout_s", raw.get("timeout_s", 180)) or 180)
+            h_timeout = int(http.get("timeout_s", d["timeout_s"]) or d["timeout_s"])
+        except (TypeError, ValueError):
+            c_timeout, h_timeout = 180, 120
+        return {
+            "exists": exists, "mode": mode,
+            "cli": {"command": [str(x) for x in command], "timeout_s": c_timeout},
+            "http_api": {
+                "provider": http.get("provider") or d["provider"],
+                "endpoint": str(http.get("endpoint", d["endpoint"]) or ""),
+                "model": str(http.get("model", d["model"]) or ""),
+                "api_key_set": bool(http.get("api_key")),
+                "api_key_env": str(http.get("api_key_env", d["api_key_env"]) or ""),
+                "timeout_s": h_timeout,
+            },
+        }
+
+    def _ai_validate_final(self, merged: dict) -> None:
+        mode = merged.get("mode")
+        if mode is None:
+            mode = "http_api" if ("http_api" in merged or "provider" in merged) else "cli"
+        elif mode not in ("cli", "http_api"):
+            raise BridgeError(400, "VALIDATION_FAILED",
+                              "mode must be 'cli' or 'http_api'", field="mode")
+        cli = merged.get("cli")
+        if cli is not None:
+            if not isinstance(cli, dict):
+                raise BridgeError(400, "VALIDATION_FAILED", "cli must be an object", field="cli")
+            cmd = cli.get("command")
+            if not isinstance(cmd, list) or not cmd or \
+                    not all(isinstance(x, str) and x for x in cmd):
+                raise BridgeError(400, "VALIDATION_FAILED",
+                                  "cli.command must be a non-empty list of strings",
+                                  field="cli.command")
+            t = cli.get("timeout_s")
+            if t is not None and (not isinstance(t, (int, float)) or t <= 0):
+                raise BridgeError(400, "VALIDATION_FAILED",
+                                  "cli.timeout_s must be positive", field="cli.timeout_s")
+        http = merged.get("http_api")
+        if http is not None:
+            if not isinstance(http, dict):
+                raise BridgeError(400, "VALIDATION_FAILED",
+                                  "http_api must be an object", field="http_api")
+            if http.get("provider") is not None and http["provider"] not in AI_PROVIDERS:
+                raise BridgeError(400, "VALIDATION_FAILED",
+                                  f"http_api.provider must be one of "
+                                  f"{', '.join(AI_PROVIDERS)}", field="http_api.provider")
+            for k in ("endpoint", "model", "api_key", "api_key_env"):
+                if http.get(k) is not None and not isinstance(http[k], str):
+                    raise BridgeError(400, "VALIDATION_FAILED",
+                                      f"http_api.{k} must be a string", field=f"http_api.{k}")
+            t = http.get("timeout_s")
+            if t is not None and (not isinstance(t, (int, float)) or t <= 0):
+                raise BridgeError(400, "VALIDATION_FAILED",
+                                  "http_api.timeout_s must be positive",
+                                  field="http_api.timeout_s")
+        if mode == "http_api":
+            http = http or {}
+            if not (http.get("model") or "").strip():
+                raise BridgeError(400, "VALIDATION_FAILED",
+                                  "http_api needs a model", field="http_api.model")
+            provider = http.get("provider") or AI_DEFAULT_CONFIG["http_api"]["provider"]
+            if provider == "openai_compatible" and not (http.get("endpoint") or "").strip():
+                raise BridgeError(400, "VALIDATION_FAILED",
+                                  "provider 'openai_compatible' needs an endpoint",
+                                  field="http_api.endpoint")
+
+    async def h_ai_config_get(self, req, m):
+        raw = self._ai_read_raw()
+        if raw is None:
+            return JsonResponse(self._ai_config_view({}, False))
+        return JsonResponse(self._ai_config_view(raw, True))
+
+    async def h_ai_config_post(self, req, m):
+        body = self.parse_json_body(req)
+        raw = self._ai_read_raw()
+        merged = dict(raw) if raw else {}
+
+        def merge_block(name: str, updates: dict) -> None:
+            cur = dict(merged.get(name) or {})
+            for k, v in updates.items():
+                if v is None:
+                    continue          # explicit null = keep existing (wire convention)
+                cur[k] = v
+            merged[name] = cur
+
+        if body.get("mode") is not None:
+            merged["mode"] = body["mode"]
+        if body.get("cli") is not None:
+            if not isinstance(body["cli"], dict):
+                raise BridgeError(400, "VALIDATION_FAILED", "cli must be an object", field="cli")
+            merge_block("cli", body["cli"])
+        if body.get("http_api") is not None:
+            if not isinstance(body["http_api"], dict):
+                raise BridgeError(400, "VALIDATION_FAILED",
+                                  "http_api must be an object", field="http_api")
+            block = dict(body["http_api"])
+            # api_key tri-state: absent/null = keep, "" = clear, non-empty = set
+            if block.get("api_key") is None:
+                block.pop("api_key", None)
+            merge_block("http_api", block)
+
+        self._ai_validate_final(merged)
+
+        path = self._ai_config_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(".ai.json.tmp")
+        tmp.write_text(json.dumps(merged, indent=2, ensure_ascii=False) + "\n",
+                       encoding="utf-8")
+        os.replace(tmp, path)
+        os.chmod(path, 0o600)
+        view = self._ai_config_view(merged, True)
+        self.store.audit("ai.config",
+                         f"mode={view['mode']} provider={view['http_api']['provider']}")
+        return JsonResponse(view)
 
     async def h_bridge_ctl(self, req, m):
         body = self.parse_json_body(req)

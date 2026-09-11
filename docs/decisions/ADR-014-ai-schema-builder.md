@@ -104,3 +104,27 @@ of model weights on phone storage and no AI round at all. v0.2.0 adds
   (local `HTTPServer` fakes, both shapes, key handling, HTTP errors),
   2 template bootstrap (written 0600 on first run; `--dry-run` writes
   nothing).
+
+---
+
+## Addendum 2 — native config UI over the bridge (bridge v0.5.1)
+
+Editing `ai.json` by hand broke the native UX. Protocol 1.1 §15 adds
+`GET/POST /v1/ai/config`:
+
+- **GET is masked**: the response carries `api_key_set: boolean` — the
+  raw key never crosses the API in either direction except when the
+  user explicitly saves one. Legacy flat configs are normalized in the
+  view.
+- **POST is a merge-patch**: unknown keys (`_help`, timeouts) and
+  untouched blocks survive; `api_key` is tri-state (absent/null = keep,
+  `""` = clear, non-empty = set); the final config is validated with
+  the same rules trmx-ai applies; the write is atomic at 0600 and
+  audit-logged with mode + provider only.
+- **Fail loud on corruption**: an unparsable `ai.json` returns 500 with
+  a fix-it-in-Termux hint — the bridge never silently overwrites a file
+  it cannot understand.
+- The app's editor (Schema Builder → header action) uses P4 components
+  only: mode/provider FilterChips, TrmxTextFields, masked key with
+  reveal toggle, sticky 48 dp Save. Capability = route presence (404 on
+  older bridges surfaces as an "update the backend" hint).

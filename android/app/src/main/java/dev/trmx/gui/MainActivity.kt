@@ -98,6 +98,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
     val toolsState by vm.tools.collectAsStateWithLifecycle()
     val schemaBuilder by vm.schemaBuilder.collectAsStateWithLifecycle()
     val servicesState by vm.services.collectAsStateWithLifecycle()
+    val aiConfigState by vm.aiConfig.collectAsStateWithLifecycle()
     val toolFormState by vm.toolForm.collectAsStateWithLifecycle()
     val chainsState by vm.chains.collectAsStateWithLifecycle()
     val recipes by vm.recipes.collectAsStateWithLifecycle()
@@ -365,12 +366,25 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                             )
                         }
                         Screen.AI_BUILDER -> {
-                            LaunchedEffect(Unit) { vm.loadTools() }
+                            LaunchedEffect(Unit) {
+                                vm.loadTools()
+                                vm.loadAiConfig()
+                            }
                             SchemaBuilderScreen(
                                 state = schemaBuilder,
                                 aiToolInstalled = toolsState.tools
                                     .firstOrNull { it.schema.id == "ai-schema-builder" }
                                     ?.installed,
+                                config = aiConfigState,
+                                onLoadConfig = vm::loadAiConfig,
+                                onSaveConfig = vm::saveAiConfig,
+                                onSetAiMode = vm::setAiMode,
+                                onSetAiProvider = vm::setAiProvider,
+                                onSetAiEndpoint = vm::setAiEndpoint,
+                                onSetAiModel = vm::setAiModel,
+                                onSetAiApiKey = vm::setAiApiKey,
+                                onForgetAiKey = vm::forgetAiKey,
+                                onSetAiCommand = vm::setAiCommand,
                                 onEditDescription = vm::editSchemaDescription,
                                 onSubmit = vm::submitSchemaBuilder,
                                 onOpenToolbox = { screen = Screen.TOOLBOX },

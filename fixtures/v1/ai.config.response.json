@@ -1,0 +1,13 @@
+{
+  "exists": true,
+  "mode": "http_api",
+  "cli": { "command": ["ollama", "run", "llama3.2"], "timeout_s": 180 },
+  "http_api": {
+    "provider": "groq",
+    "endpoint": "",
+    "model": "llama-3.3-70b-versatile",
+    "api_key_set": true,
+    "api_key_env": "GROQ_API_KEY",
+    "timeout_s": 120
+  }
+}
