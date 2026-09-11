@@ -360,3 +360,31 @@ Screenshots for anything visual (this round is visual by nature). If a
 field still renders white anywhere, note WHICH screen and whether the
 keyboard or the field itself is white — the XML theme is the root fix,
 TrmxFieldColors the belt-and-braces.
+
+# UX-audit round 3 (P3) — OLED design system (2026-09-11)
+
+**Build:** CI green on the P3 commit. **App-only** — bridge stays v0.4.1,
+install in place. Presentation-tier only; all behavior unchanged.
+
+## Acceptance checklist
+
+| # | Action | Expected |
+|---|--------|----------|
+| 1 | Cold-start | **pure black** background everywhere (OLED) — no slate, no grey |
+| 2 | Home | status pill, hero/intent cards are **dark surfaces with thin outlines**, not shadowed grey cards |
+| 3 | Accents | **ice-cyan** for focus/primary/RUN/running, **steel blue** for completed — **no green, no amber anywhere** |
+| 4 | Buttons | Primary RUN is the one loud cyan button per screen; secondary actions are quiet outlines; **no ragged multi-line wraps** (Files toolbar is one compact line) |
+| 5 | Tool form | dark fields (no white boxes), dark keyboard, label INSIDE the field, back arrow top bar |
+| 6 | Files | rows: name + "Aug 28 · 3.5 KB"; folders first; tap = details sheet |
+| 7 | Toolbox | "● Ready" (cyan) / "● Setup required" (dim steel) on dark cards |
+| 8 | Chains (empty) | Fetch → Process → Archive educational card, cyan CTA |
+| 9 | Job detail | task title top bar, cancel = red outline Danger button |
+| 10 | Tasks on Home | each task is its own outcome card (not one big list) |
+| 11 | Regression: run ffmpeg with defaults | submits (P0 wire fix intact) |
+| 12 | Regression: yt-dlp progress | live cyan progress bar + detail line |
+
+## If something breaks
+
+Screenshots + which screen. If any green/amber sneaks back or a field
+renders light, name the screen — every constant lives in Tokens.kt, so
+fixes are surgical.

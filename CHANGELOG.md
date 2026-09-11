@@ -6,6 +6,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Changed — UX-audit P3: OLED design system — Tokens + Trmx components (2026-09-11, app-only, ADR-013)
+- **Tokens** (new): single source of truth — true-OLED `#000000` ground,
+  `#0A0E17`/`#121824` elevated surfaces with 1 dp outlines, Electric
+  Ice-Cyan accent + Steel Blue secondary, crisp white text, muted slate
+  metadata, semantic red for failures ONLY. Green/mint and orange/amber
+  purged everywhere (including stderr/live-status literals).
+- **Component foundation** (new): `TrmxTopBar`, `TrmxCard`
+  (border-defined elevation), `TrmxButton` (Primary/Secondary/Ghost/
+  Danger), `TrmxTextField` — future screens (AI schema builder,
+  services, daemon settings) compose these with zero ad-hoc styling.
+- **Screens rebuilt on the foundation**: Home (status pill, hero, 2×2
+  intent grid, per-task outcome cards), Tool form + Job detail
+  (TrmxTopBar headers), Files (compact one-line toolbar, token-styled
+  rows), Toolbox, Chains, Diagnostics sheet, Submit dialog. Wizard
+  inherits the scheme automatically.
+- Platform window/splash now pure black.
+- Presentation-tier only: no protocol/bridge/FormEngine-logic changes;
+  JVM tests untouched. Blueprint note: the design package did not
+  persist into the workspace — palette derives from the written
+  directives and is centralized for a one-file fidelity pass.
+
 ### Changed — UX-audit P2: productization pass (2026-09-10, app-only, ADR-012)
 - **Home = intent-based workspace**: hero card when idle ("Your Linux
   runtime, on this phone."), and four equal-footing action cards —

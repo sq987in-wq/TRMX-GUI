@@ -29,7 +29,7 @@ tar-backup, yt-dlp, ffmpeg, aria2c); drop your own schema into
 | **Phase 8 — Polish, UX & FileProvider** | ✅ **Complete & ON-DEVICE VERIFIED (Android 16, 2026-09-09): icon, back navigation, open/share confirmed** |
 | **Phase 9 — Tool Registry & GUI modules** | ✅ **Complete & functionally verified on-device (Android 16): registry + forms + toolbox + chains (bridge v0.4.1)** |
 | **Phase 9.5 — Executive polish & artifacts** | ✅ **Complete — terminal-luxe design system, form overhaul (touched-state, in-field pickers), NavigationBar, x_trmx vocabulary, artifact cards; CI green (run 34440424849); on-device round pending** |
-| **UX-audit P0–P2 — Cognitive UX overhaul** | ✅ **Built & CI green (P0+P1 run 34502295508, P2 run 34507791245, ADR-012) — wire typing, wrapping buttons, dotfiles hidden, Command Center + Diagnostics, intent-card Home + hero workspace, dark platform theme (white-IME root fix), native TopAppBars, human Files rows + details sheet, Ready/Setup-required cards, Chains empty state; on-device round pending** |
+| **UX-audit P0–P3 — Cognitive UX + design system** | ✅ **P0–P2 built & CI green (runs 34502295508 / 34507791245, ADR-012); P3 built (ADR-013) — OLED Tokens + TrmxTopBar/Card/Button/TextField foundation, ice-cyan/steel palette (green/amber purged), all screens rebuilt on components; CI pending** |
 | Phases 10–12 | 🚫 not started |
 
 **Phase 0 decisions:** me + friends distribution via GitHub releases · Termux from GitHub Releases · target Android 14+ (minSdk 26) · hybrid GUI (Tool Registry + universal runner) · device-local-only V1 transport · core-first V1 scope. See [Appendix 3 of the report](docs/PHASE-0-DISCOVERY-REPORT.md#appendix-3--phase-0-sign-off-inputs-recorded-2026-09-07).
