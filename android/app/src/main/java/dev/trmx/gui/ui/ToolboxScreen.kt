@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountTree
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.AlertDialog
@@ -63,6 +64,7 @@ fun ToolboxScreen(
     onShareRecipe: (Recipe) -> Unit,
     onImportRecipe: (android.net.Uri) -> Unit,
     onOpenChains: () -> Unit,
+    onOpenSchemaBuilder: () -> Unit,
     onSubmitName: (String) -> Unit,
     onSubmitArgv: (String) -> Unit,
     onSubmitCwd: (String) -> Unit,
@@ -175,6 +177,24 @@ fun ToolboxScreen(
                         TextButton(onClick = { onDeleteRecipe(r.id) }) {
                             Text("delete", color = MaterialTheme.colorScheme.error) }
                     }
+                }
+            }
+        }
+
+        TrmxCard(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onOpenSchemaBuilder,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Sp.m)) {
+                Icon(Icons.Outlined.AutoAwesome, contentDescription = null,
+                     tint = P.Accent, modifier = Modifier.size(22.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(Sp.xs)) {
+                    Text("AI Schema Builder", style = MaterialTheme.typography.titleSmall,
+                         fontWeight = FontWeight.SemiBold)
+                    Text("Describe a tool in plain words — a local LLM writes the schema.",
+                         style = MaterialTheme.typography.bodySmall,
+                         color = P.TextSecondary)
                 }
             }
         }

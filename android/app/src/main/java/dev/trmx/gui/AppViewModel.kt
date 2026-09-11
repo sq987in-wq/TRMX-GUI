@@ -41,6 +41,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonObject
@@ -127,6 +128,15 @@ data class ToolsState(
     val schemaErrors: List<String> = emptyList(),
 )
 
+/** AI Schema Builder state (AI round, ADR-014). */
+data class SchemaBuilderState(
+    val description: String = "",
+    val submitting: Boolean = false,
+    val jobId: String? = null,      // running/finished trmx-ai job
+    val result: String? = null,     // terminal notice (success or failure)
+    val error: String? = null,      // submit-side error (validation/HTTP)
+)
+
 /** One dynamic tool form (a schema + live field values). */
 data class ToolFormState(
     val schema: dev.trmx.gui.model.ToolSchema? = null,
@@ -196,6 +206,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _toolForm = MutableStateFlow(ToolFormState())
     val toolForm = _toolForm.asStateFlow()
 
+    private val _schemaBuilder = MutableStateFlow(SchemaBuilderState())
+    val schemaBuilder = _schemaBuilder.asStateFlow()
+
     private val _chains = MutableStateFlow(ChainsState())
     val chains = _chains.asStateFlow()
 
@@ -216,6 +229,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private var chainRunner: Job? = null
     private var installWatch: String? = null   // job_id of a running pkg install
+    private var aiWatch: String? = null        // job_id of a running trmx-ai job
     val files = _files.asStateFlow()
 
     fun isTermuxInstalled(): Boolean = controlPlane.isTermuxInstalled()
@@ -882,6 +896,56 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---- AI Schema Builder (AI round, ADR-014) ------------------------------
+
+    /** Runs the bundled `ai-schema-builder` tool (trmx-ai on the phone);
+     *  completion is watched via /v1/events — see onEvent. */
+    fun editSchemaDescription(v: String) =
+        _schemaBuilder.update { it.copy(description = v, error = null) }
+
+    fun clearSchemaBuilderResult() =
+        _schemaBuilder.update { it.copy(result = null, error = null, jobId = null) }
+
+    fun submitSchemaBuilder() {
+        val s = _schemaBuilder.value
+        if (s.submitting) return
+        val desc = s.description.trim()
+        if (desc.length < 8) {
+            _schemaBuilder.update {
+                it.copy(error = "describe the tool in a few more words (name the binary)")
+            }
+            return
+        }
+        _schemaBuilder.update { it.copy(submitting = true, error = null, result = null) }
+        viewModelScope.launch {
+            val req = ToolSubmitRequest(
+                name = "AI schema build",
+                tool = "ai-schema-builder",
+                args = mapOf("description" to JsonPrimitive(desc)),
+                cwd = "~")
+            when (val r = client().submitToolJob(req)) {
+                is BridgeResult.Success -> {
+                    val id = r.data.response.job_id
+                    aiWatch = id
+                    _schemaBuilder.update { it.copy(submitting = false, jobId = id) }
+                    _dashboard.update {
+                        it.copy(notice = "job $id submitted (ai-schema-builder)")
+                    }
+                }
+                is BridgeResult.HttpError ->
+                    _schemaBuilder.update {
+                        it.copy(submitting = false,
+                                error = "HTTP ${r.status} ${r.code} — ${r.message}")
+                    }
+                is BridgeResult.NetworkError ->
+                    _schemaBuilder.update {
+                        it.copy(submitting = false,
+                                error = "bridge unreachable: ${r.cause.message}")
+                    }
+            }
+        }
+    }
+
     // ---- artifacts (Phase 9.5) ---------------------------------------------
 
     /**
@@ -1306,6 +1370,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     _tools.update { it.copy(notice =
                         "install ${if (job.status == "COMPLETED") "finished" else job.status.lowercase()} — rescanning") }
                     refreshToolsNow()
+                }
+                // AI round: a finished trmx-ai job installed a schema —
+                // rescan the registry so the new tool appears immediately
+                if (aiWatch == job.job_id && job.status in TERMINAL) {
+                    aiWatch = null
+                    if (job.status == "COMPLETED") {
+                        _schemaBuilder.update {
+                            it.copy(result = "schema installed — toolbox rescanned")
+                        }
+                        refreshToolsNow()
+                    } else {
+                        _schemaBuilder.update {
+                            it.copy(result = "job ${job.status.lowercase()} — open it for details")
+                        }
+                    }
                 }
             }
             "bridge.stopping" -> {

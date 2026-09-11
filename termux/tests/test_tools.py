@@ -222,8 +222,9 @@ class TestTools(unittest.TestCase):
         status, _, raw = self.http("POST", "/v1/tools/refresh", body={})
         self.assertEqual(status, 200, raw)
         tools = json.loads(raw)["tools"]
-        # 7 bundled + 5 user (faketool, fakeprog, ghosttool, fakegit, fakeserver)
-        self.assertEqual(len(tools), 12)
+        # 7 bundled + ai-schema-builder + 5 user (faketool, fakeprog,
+        # ghosttool, fakegit, fakeserver)
+        self.assertEqual(len(tools), 13)
 
     # ---- §7.2 submit: synthesis -------------------------------------------
 
@@ -440,6 +441,244 @@ class TestRegistryOverrides(unittest.TestCase):
         tools = {t["schema"]["id"] for t in json.loads(self.http("GET", "/v1/tools")[2])["tools"]}
         self.assertIn("ffmpeg", tools)
         self.assertIn("aria2c", tools)
+
+
+
+
+
+class TestAutoMkdir(unittest.TestCase):
+    """v0.4.2: `mkdir: true` dir args are CREATED at submit (parents too)
+    instead of 404 PATH_NOT_FOUND — yt-dlp/aria2c outdir ergonomics.
+    Creation is write-policy-contained (§6.1); plain dir args keep the
+    existence check."""
+
+    home: str = ""
+    port: int = 0
+    bridge: BridgeProc
+    token: str = ""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp(prefix="trmx-mkdir-home-")
+        cls.home = os.path.join(cls.tmp, "trmx-home")
+        (Path(cls.home) / "tools").mkdir(parents=True)
+        (Path(cls.home) / "bridge.json").write_text(json.dumps({}))
+        cls.binroot = Path(tempfile.mkdtemp(prefix="trmx-mkdir-bin-"))
+        fake = cls.binroot / "faketool"
+        fake.write_text("#!/bin/sh\n"
+                        'if [ "$1" = "--version" ]; then echo "faketool 1.2.3"; exit 0; fi\n'
+                        'echo "argv: $@"\n')
+        fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+        cls._old_path = os.environ["PATH"]
+        os.environ["PATH"] = f"{cls.binroot}:{cls._old_path}"
+        # two variants of the same tool: outdir with and without mkdir
+        (Path(cls.home) / "tools" / "a-mk.json").write_text(json.dumps({
+            "id": "mktool", "name": "Mk Tool", "description": "outdir auto-created",
+            "binary": "faketool", "risk_tier": "safe",
+            "args": [
+                {"name": "url", "label": "URL", "type": "url", "required": True},
+                {"name": "outdir", "label": "Out dir", "type": "path", "path_kind": "dir",
+                 "argv": ["-P", "{value}"], "mkdir": True},
+            ]}))
+        (Path(cls.home) / "tools" / "b-nomk.json").write_text(json.dumps({
+            "id": "nomktool", "name": "NoMk Tool", "description": "outdir must exist",
+            "binary": "faketool", "risk_tier": "safe",
+            "args": [
+                {"name": "url", "label": "URL", "type": "url", "required": True},
+                {"name": "outdir", "label": "Out dir", "type": "path", "path_kind": "dir",
+                 "argv": ["-P", "{value}"]},
+            ]}))
+        cls.port = free_port()
+        cls.bridge = BridgeProc(cls.home, cls.port)
+        cls.bridge.start()
+        cls.token = cls.bridge.token()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.bridge.term()
+        cls.bridge.close()
+        os.environ["PATH"] = cls._old_path
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+        shutil.rmtree(cls.binroot, ignore_errors=True)
+        for d in Path.home().glob("trmx-mkdir-e2e-*"):
+            shutil.rmtree(d, ignore_errors=True)
+
+    @classmethod
+    def http(cls, method, path, body=None):
+        conn = http.client.HTTPConnection("127.0.0.1", cls.port, timeout=15)
+        hdrs = {"X-TRMX-Protocol": "1", "Connection": "close",
+                "Authorization": f"Bearer {cls.token}"}
+        if body is not None:
+            body = json.dumps(body).encode()
+            hdrs["Content-Type"] = "application/json"
+        conn.request(method, path, body=body, headers=hdrs)
+        resp = conn.getresponse()
+        raw = resp.read()
+        conn.close()
+        return resp.status, dict(resp.getheaders()), raw
+
+    @classmethod
+    def submit(cls, payload):
+        status, _, raw = cls.http("POST", "/v1/jobs", payload)
+        return status, json.loads(raw)
+
+    def test_01_missing_dir_created_parents_and_all(self):
+        # unique missing leaf + missing parents, under a root (real home)
+        leaf = Path.home() / f"trmx-mkdir-e2e-{os.getpid()}" / "a" / "b"
+        wire = "~/" + str(leaf.relative_to(Path.home()))
+        status, resp = self.submit({"type": "tool", "tool": "mktool",
+                                    "args": {"url": "https://example.com/v",
+                                             "outdir": wire}})
+        self.assertEqual(status, 201, resp)
+        self.assertTrue(leaf.is_dir(), "outdir should have been created (parents too)")
+        self.assertIn(resp["status"], ("QUEUED", "STARTING", "RUNNING", "COMPLETED"))
+
+    def test_02_existing_dir_still_fine(self):
+        d = Path(tempfile.mkdtemp(prefix="trmx-mkdir-e2e-", dir=str(Path.home())))
+        wire = "~/" + str(d.relative_to(Path.home()))
+        status, resp = self.submit({"type": "tool", "tool": "mktool",
+                                    "args": {"url": "https://example.com/v",
+                                             "outdir": wire}})
+        self.assertEqual(status, 201, resp)
+        self.assertTrue(d.is_dir())
+
+    def test_03_no_mkdir_flag_still_404(self):
+        status, resp = self.submit({"type": "tool", "tool": "nomktool",
+                                    "args": {"url": "https://example.com/v",
+                                             "outdir": "~/definitely-not-here-xyz"}})
+        self.assertEqual(status, 404)
+        self.assertEqual(resp["error"]["code"], "PATH_NOT_FOUND")
+        self.assertEqual(resp["error"].get("field"), "outdir")
+
+    def test_04_mkdir_outside_roots_denied(self):
+        status, resp = self.submit({"type": "tool", "tool": "mktool",
+                                    "args": {"url": "https://example.com/v",
+                                             "outdir": "/etc/trmx-should-not-create"}})
+        self.assertEqual(status, 403)
+        self.assertEqual(resp["error"]["code"], "PATH_DENIED")
+        self.assertFalse(Path("/etc/trmx-should-not-create").exists())
+
+    def test_05_schema_validation_mkdir_requires_dir(self):
+        bad = {"id": "badmk", "name": "Bad", "binary": "faketool",
+               "args": [{"name": "f", "type": "path", "path_kind": "file", "mkdir": True}]}
+        (Path(self.home) / "tools" / "c-bad.json").write_text(json.dumps(bad))
+        status, _, raw = self.http("POST", "/v1/tools/refresh", {})
+        self.assertEqual(status, 200)
+        tools = {t["schema"]["id"] for t in json.loads(raw)["tools"]}
+        self.assertNotIn("badmk", tools)
+        # error surfaces via system/info.features on next info fetch
+        (Path(self.home) / "tools" / "c-bad.json").unlink()
+
+
+class TestAiSchemaBuilder(unittest.TestCase):
+    """AI round e2e (ADR-014): submit an ai-schema-builder tool job ->
+    trmx-ai (faked on PATH) writes ~/.trmx/tools/ai-*.json -> a tools
+    refresh registers the generated tool. Proves argv synthesis (positional
+    description), the bundled schema, and the refresh-picks-up-AI-files path.
+    """
+
+    home: str = ""
+    port: int = 0
+    bridge: BridgeProc
+    token: str = ""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp(prefix="trmx-ai-e2e-home-")
+        cls.home = os.path.join(cls.tmp, "trmx-home")
+        (Path(cls.home) / "tools").mkdir(parents=True)
+        (Path(cls.home) / "bridge.json").write_text(json.dumps({}))
+        cls.binroot = Path(tempfile.mkdtemp(prefix="trmx-ai-e2e-bin-"))
+        # fake trmx-ai: --version for the probe; otherwise expect the
+        # description as $1 and drop a schema file into the bridge home
+        fake = cls.binroot / "trmx-ai"
+        schema_json = json.dumps({
+            "id": "e2e-tool", "name": "E2E Tool",
+            "description": "made by fake trmx-ai", "binary": "faketool",
+            "risk_tier": "confirm", "fixed_argv": [],
+            "args": [{"name": "url", "label": "URL", "type": "url",
+                      "required": True}]})
+        fake.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = "--version" ]; then echo "trmx-ai 0.1.0"; exit 0; fi\n'
+            'printf \'%s\' "$1" > "' + cls.home + '/last-description.txt"\n'
+            'printf \'%s\' \'' + schema_json + '\' > "' + cls.home + '/tools/ai-e2e.json"\n'
+            'echo "schema installed: e2e-tool"\n')
+        fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+        cls._old_path = os.environ["PATH"]
+        os.environ["PATH"] = f"{cls.binroot}:{cls._old_path}"
+        cls.port = free_port()
+        cls.bridge = BridgeProc(cls.home, cls.port)
+        cls.bridge.start()
+        cls.token = cls.bridge.token()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.bridge.term()
+        cls.bridge.close()
+        os.environ["PATH"] = cls._old_path
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+        shutil.rmtree(cls.binroot, ignore_errors=True)
+
+    @classmethod
+    def http(cls, method, path, body=None):
+        conn = http.client.HTTPConnection("127.0.0.1", cls.port, timeout=15)
+        hdrs = {"X-TRMX-Protocol": "1", "Connection": "close",
+                "Authorization": f"Bearer {cls.token}"}
+        if body is not None:
+            body = json.dumps(body).encode()
+            hdrs["Content-Type"] = "application/json"
+        conn.request(method, path, body=body, headers=hdrs)
+        resp = conn.getresponse()
+        raw = resp.read()
+        conn.close()
+        return resp.status, dict(resp.getheaders()), raw
+
+    @classmethod
+    def submit(cls, payload):
+        status, _, raw = cls.http("POST", "/v1/jobs", payload)
+        return status, json.loads(raw)
+
+    @classmethod
+    def wait_job(cls, job_id, timeout=20):
+        deadline = time.time() + timeout
+        job = {}
+        while time.time() < deadline:
+            _, _, raw = cls.http("GET", f"/v1/jobs/{job_id}")
+            job = json.loads(raw)
+            if job.get("status") in ("COMPLETED", "FAILED", "CANCELLED", "LOST"):
+                return job
+            time.sleep(0.2)
+        raise AssertionError(f"job {job_id} did not finish: {job}")
+
+    def test_01_bundled_schema_present_and_probed(self):
+        _, _, raw = self.http("GET", "/v1/tools")
+        tools = {t["schema"]["id"]: t for t in json.loads(raw)["tools"]}
+        self.assertIn("ai-schema-builder", tools)
+        self.assertTrue(tools["ai-schema-builder"]["installed"])
+        self.assertEqual(tools["ai-schema-builder"]["version"], "trmx-ai 0.1.0")
+
+    def test_02_job_runs_wrapper_and_refresh_registers_tool(self):
+        desc = "a tool that fetches pages with curl"
+        status, job = self.submit({"name": "build schema", "type": "tool",
+                                   "tool": "ai-schema-builder",
+                                   "args": {"description": desc}})
+        self.assertEqual(status, 201, job)
+        done = self.wait_job(job["job_id"])
+        self.assertEqual(done["status"], "COMPLETED", done)
+        self.assertEqual(done["exit_code"], 0)
+        argv = done["argv"]
+        self.assertTrue(argv[0].endswith("trmx-ai"), argv)
+        self.assertEqual(argv[1], desc)             # positional description
+        self.assertNotIn("--model", argv)           # optional arg omitted
+        # the fake wrapper received the description verbatim
+        got = (Path(self.home) / "last-description.txt").read_text()
+        self.assertEqual(got, desc)
+        # schema file landed; refresh registers the generated tool
+        self.assertTrue((Path(self.home) / "tools" / "ai-e2e.json").is_file())
+        _, _, raw = self.http("POST", "/v1/tools/refresh", {})
+        tools = {t["schema"]["id"] for t in json.loads(raw)["tools"]}
+        self.assertIn("e2e-tool", tools)
 
 
 if __name__ == "__main__":

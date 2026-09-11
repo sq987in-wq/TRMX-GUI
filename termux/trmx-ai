@@ -1,0 +1,391 @@
+#!/usr/bin/env python3
+"""trmx-ai — LLM wrapper that WRITES tool schemas (AI round, ADR-014).
+
+    trmx-ai "<plain-words description of a command-line tool>"
+
+Pipeline: description -> prompt -> configured LLM CLI -> UNTRUSTED output
+-> strict validation (§7.2 rules, mirrored from the bridge) -> schema file
+in ~/.trmx/tools/ai-<id>.json. The bridge's /v1/tools/refresh picks it up;
+no bridge restart needed.
+
+Trust model (ADR-014):
+  - LLM output is UNTRUSTED: never eval'd, only parsed as data; the schema
+    is validated with the same structural rules the bridge enforces, plus
+    size caps; on any doubt the wrapper fails loud (exit 4) and writes
+    nothing.
+  - AI-generated tools are pinned to risk_tier "confirm" — a human must
+    edit the JSON by hand to relax it.
+  - The wrapper writes ONLY inside ~/.trmx/tools/ and never overwrites.
+
+Backend config: ~/.trmx/ai.json
+    { "command": ["ollama", "run", "llama3.2"], "timeout_s": 180 }
+  The prompt is appended to `command` as a single argv element (no shell).
+  Default when the file is absent: ["ollama", "run", "llama3.2"].
+
+Exit codes: 0 ok · 2 usage · 3 backend/config problem · 4 LLM output
+invalid · 5 refused overwrite.
+
+Env: TRMX_HOME (default ~/.trmx) — for tests.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+TRMX_AI_VERSION = "0.1.0"
+DEFAULT_COMMAND = ["ollama", "run", "llama3.2"]
+DEFAULT_TIMEOUT_S = 180
+MAX_LLM_BYTES = 65536          # cap on model output we are willing to parse
+
+ARG_TYPES = ("string", "int", "float", "bool", "enum", "path", "url")
+
+
+# ---------------------------------------------------------------- helpers
+
+def die(code: int, msg: str) -> "None":
+    print(f"trmx-ai: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def home_dir() -> Path:
+    return Path(os.environ.get("TRMX_HOME", str(Path.home() / ".trmx")))
+
+
+def load_backend(model: str | None) -> tuple[list[str], int]:
+    """Read ~/.trmx/ai.json; fall back to the default ollama command."""
+    cfg_path = home_dir() / "ai.json"
+    command = list(DEFAULT_COMMAND)
+    timeout = DEFAULT_TIMEOUT_S
+    if cfg_path.is_file():
+        try:
+            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        except Exception as e:  # noqa: BLE001
+            die(3, f"{cfg_path}: not valid JSON: {e}")
+        if not isinstance(cfg, dict):
+            die(3, f"{cfg_path}: must be a JSON object")
+        cmd = cfg.get("command", command)
+        if not isinstance(cmd, list) or not cmd or \
+                not all(isinstance(x, str) for x in cmd):
+            die(3, f"{cfg_path}: 'command' must be a non-empty list of strings")
+        command = list(cmd)
+        t = cfg.get("timeout_s", timeout)
+        if not isinstance(t, (int, float)) or t <= 0:
+            die(3, f"{cfg_path}: 'timeout_s' must be a positive number")
+        timeout = int(t)
+    if model:                     # --model overrides the configured model
+        if len(command) >= 2 and command[0] == "ollama":
+            command[2] = model
+        else:
+            die(3, "--model needs an 'ollama' backend in ~/.trmx/ai.json "
+                   "(other backends: set the model inside 'command')")
+    return command, timeout
+
+
+# ------------------------------------------------- prompt (§7.2 teacher)
+
+PROMPT_TEMPLATE = """You translate ONE plain-words description into a JSON tool
+schema for the TRMX registry. Emit ONLY the JSON object — no prose,
+no markdown fences.
+
+Schema shape:
+{{
+  "id": "kebab-case-unique-id",
+  "name": "Human name (<= 80 chars)",
+  "description": "One or two sentences (<= 400 chars)",
+  "binary": "the exact executable name, no slashes",
+  "risk_tier": "safe|confirm|destructive",
+  "fixed_argv": ["flags always passed"],
+  "progress_regex": "regex whose FIRST capture group is an integer percent (or omit)",
+  "args": [
+    {{
+      "name": "arg_name", "label": "Human label", "type": "string|int|float|bool|enum|path|url",
+      "required": true, "help": "short hint",
+      "enum": ["a", "b"],            // enum only
+      "default": "value",            // optional
+      "argv": ["-f", "{{value}}"],    // how it maps to command-line tokens
+      "min": 0, "max": 100,          // int/float only, optional
+      "pattern": "^...$",            // optional validation regex
+      "path_kind": "file|dir"        // path only
+    }}
+  ],
+  "examples": [{{ "label": "...", "args": {{ "arg_name": "value" }} }}]
+}}
+
+Hard rules:
+- At most 12 args. Only include options an ordinary user needs.
+- REQUIRED args must be truly required by the binary.
+- A non-bool arg with "argv" must contain "{{value}}" EXACTLY once.
+- A bool arg's argv must NOT contain "{{value}}" (flags like ["-x"]).
+- Type honestly: numbers int/float, choices enum, files/folders path,
+  http(s) links url.
+- Output folders: type "path", "path_kind": "dir", and add "mkdir": true
+  so the engine creates them if missing.
+- No shell syntax, no pipes, no command substitution anywhere.
+
+Description: {description}
+
+Respond with the JSON object only."""
+
+
+# --------------------------------------------- untrusted-output handling
+
+def extract_json(text: str) -> dict:
+    """First balanced, string-aware {...} block. Fences/prose tolerated,
+    but the JSON itself must parse — anything else is invalid."""
+    text = text[:MAX_LLM_BYTES]
+    start = text.find("{")
+    if start < 0:
+        raise ValueError("no JSON object found in the model output")
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(text)):
+        c = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+            continue
+        if c == '"':
+            in_str = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    obj = json.loads(text[start:i + 1])
+                except Exception as e:  # noqa: BLE001
+                    raise ValueError(f"model JSON does not parse: {e}") from e
+                if not isinstance(obj, dict):
+                    raise ValueError("model output is not a JSON object")
+                return obj
+    raise ValueError("unbalanced braces in the model output")
+
+
+def _cap(v, limit: int, what: str) -> str:
+    if len(v) > limit:
+        raise ValueError(f"{what}: longer than {limit} chars")
+    return v
+
+
+def validate_schema(raw: dict) -> dict:
+    """§7.2 structural rules (mirrored from the bridge) + AI-specific caps.
+    Returns a NORMALIZED, safe-to-write schema; raises ValueError loudly."""
+    if not isinstance(raw, dict):
+        raise ValueError("schema must be a JSON object")
+
+    sid = raw.get("id")
+    if not isinstance(sid, str):
+        raise ValueError("id: must be a string")
+    sid = sid.strip().lower()
+    sid = re.sub(r"[^a-z0-9-]+", "-", sid).strip("-")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,39}", sid):
+        raise ValueError(f"id: cannot derive a valid slug from {raw.get('id')!r}")
+
+    name = raw.get("name", sid)
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("name: must be a non-empty string")
+    name = _cap(name.strip(), 80, "name")
+
+    desc = raw.get("description", "")
+    if not isinstance(desc, str):
+        raise ValueError("description: must be a string")
+    desc = _cap(desc.strip(), 400, "description")
+
+    binary = raw.get("binary")
+    if not isinstance(binary, str) or not binary or "/" in binary or \
+            binary.startswith(".") or ".." in binary:
+        raise ValueError("binary: must be a bare executable name")
+
+    # ADR-014: AI-generated tools are confirm-tier until a human edits
+    # the JSON by hand. The model's claim is ignored on purpose.
+    risk_tier = "confirm"
+
+    fixed = raw.get("fixed_argv", [])
+    if not isinstance(fixed, list) or len(fixed) > 16 or \
+            not all(isinstance(x, str) for x in fixed):
+        raise ValueError("fixed_argv: must be a list of at most 16 strings")
+
+    args = raw.get("args", [])
+    if not isinstance(args, list) or len(args) > 12:
+        raise ValueError("args: must be a list of at most 12 args")
+
+    seen: set[str] = set()
+    clean_args = []
+    for a in args:
+        if not isinstance(a, dict) or not isinstance(a.get("name"), str) or not a["name"]:
+            raise ValueError("each arg needs a non-empty name")
+        an = a["name"]
+        if an in seen:
+            raise ValueError(f"duplicate arg name '{an}'")
+        seen.add(an)
+        t = a.get("type", "string")
+        if t not in ARG_TYPES:
+            raise ValueError(f"arg '{an}': bad type '{t}'")
+        argv = a.get("argv")
+        if argv is not None:
+            if not isinstance(argv, list) or len(argv) > 8 or \
+                    not all(isinstance(x, str) for x in argv):
+                raise ValueError(f"arg '{an}': argv must be a list of at most 8 strings")
+            if t == "bool":
+                if any("{value}" in x for x in argv):
+                    raise ValueError(f"bool arg '{an}': argv may not contain {{value}}")
+            elif sum(x.count("{value}") for x in argv) != 1:
+                raise ValueError(f"arg '{an}': argv must contain {{value}} exactly once")
+        if t == "enum":
+            en = a.get("enum")
+            if not isinstance(en, list) or not en or len(en) > 12 or \
+                    not all(isinstance(x, str) and x for x in en):
+                raise ValueError(f"arg '{an}': enum needs 1-12 non-empty strings")
+        if a.get("pattern"):
+            if not isinstance(a["pattern"], str):
+                raise ValueError(f"arg '{an}': pattern must be a string")
+            try:
+                re.compile(a["pattern"])
+            except re.error as e:
+                raise ValueError(f"arg '{an}': bad pattern: {e}") from e
+        if a.get("path_kind") not in (None, "file", "dir"):
+            raise ValueError(f"arg '{an}': path_kind must be file|dir")
+        if "mkdir" in a:
+            if a.get("path_kind") != "dir" or not isinstance(a["mkdir"], bool):
+                raise ValueError(f"arg '{an}': mkdir requires path_kind 'dir' + boolean")
+        mn, mx = a.get("min"), a.get("max")
+        if None not in (mn, mx) and mn > mx:
+            raise ValueError(f"arg '{an}': min > max")
+        clean = {"name": an, "label": _cap(str(a.get("label", an))[:61] or an, 60, "label"),
+                 "type": t, "required": bool(a.get("required"))}
+        if a.get("help") is not None:
+            clean["help"] = _cap(str(a["help"]), 200, f"arg '{an}' help")
+        if a.get("enum") is not None:
+            clean["enum"] = a["enum"]
+        if a.get("default") is not None:
+            clean["default"] = a["default"]
+        if argv is not None:
+            clean["argv"] = argv
+        if a.get("min") is not None:
+            clean["min"] = a["min"]
+        if a.get("max") is not None:
+            clean["max"] = a["max"]
+        if a.get("pattern") is not None:
+            clean["pattern"] = a["pattern"]
+        if a.get("path_kind") is not None:
+            clean["path_kind"] = a["path_kind"]
+        if "mkdir" in a:
+            clean["mkdir"] = a["mkdir"]
+        clean_args.append(clean)
+
+    examples = []
+    for ex in raw.get("examples", [])[:6]:
+        if isinstance(ex, dict) and isinstance(ex.get("args"), dict):
+            examples.append({"label": _cap(str(ex.get("label", "")), 60, "example label"),
+                             "args": ex["args"]})
+
+    schema = {"id": sid, "name": name, "description": desc, "binary": binary,
+              "risk_tier": risk_tier, "fixed_argv": fixed, "args": clean_args}
+    if raw.get("progress_regex"):
+        if not isinstance(raw["progress_regex"], str):
+            raise ValueError("progress_regex: must be a string")
+        try:
+            re.compile(raw["progress_regex"])
+        except re.error as e:
+            raise ValueError(f"progress_regex: bad regex: {e}") from e
+        schema["progress_regex"] = raw["progress_regex"]
+    if examples:
+        schema["examples"] = examples
+    return schema
+
+
+# ------------------------------------------------------------------ main
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(
+        prog="trmx-ai",
+        description="Turn a plain-words description into a TRMX tool schema "
+                    "via a configured LLM CLI (ADR-014).")
+    ap.add_argument("description", help="what the tool should do, in plain words")
+    ap.add_argument("--model", help="override the ollama model")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="validate and print the schema; write nothing")
+    ap.add_argument("--version", action="version",
+                    version=f"trmx-ai {TRMX_AI_VERSION}")
+    args = ap.parse_args(argv)
+
+    description = args.description.strip()
+    if len(description) < 8:
+        die(2, "description too short — describe the binary and what it should do")
+
+    command, timeout = load_backend(args.model)
+    prompt = PROMPT_TEMPLATE.format(description=description)
+
+    print(f"trmx-ai: calling {command[0]} … (this can take a minute)",
+          file=sys.stderr)
+    try:
+        proc = subprocess.run(command + [prompt], capture_output=True,
+                              timeout=timeout)
+    except FileNotFoundError:
+        die(3, f"backend '{command[0]}' not found — install it (e.g. "
+               "pkg install ollama) or set 'command' in ~/.trmx/ai.json")
+    except subprocess.TimeoutExpired:
+        die(3, f"backend timed out after {timeout}s — try a smaller model "
+               "or raise timeout_s in ~/.trmx/ai.json")
+    if proc.returncode != 0:
+        tail = proc.stderr.decode("utf-8", "replace")[-500:]
+        die(3, f"backend exited {proc.returncode}: {tail.strip()}")
+
+    out = proc.stdout.decode("utf-8", "replace")
+    if not out.strip():
+        die(4, "model produced no output")
+
+    # ---- untrusted from here on: parse as data, validate, cap ------------
+    try:
+        schema = validate_schema(extract_json(out))
+    except ValueError as e:
+        die(4, f"model output rejected: {e}\n"
+               "try rephrasing the description (shorter, name the binary)")
+
+    dest_dir = home_dir() / "tools"
+    dest = dest_dir / f"ai-{schema['id']}.json"
+    rendered = json.dumps(schema, indent=2, ensure_ascii=False) + "\n"
+
+    if args.dry_run:
+        print(rendered, end="")
+        print("trmx-ai: dry run — nothing written", file=sys.stderr)
+        return 0
+
+    if dest.exists():
+        die(5, f"refusing to overwrite {dest} — edit or remove it first "
+               "(generated tools are plain JSON)")
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    tmp = tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=dest_dir,
+                                      prefix=".ai-", delete=False)
+    try:
+        tmp.write(rendered)
+        tmp.close()
+        os.replace(tmp.name, dest)
+    except BaseException:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+        raise
+
+    print(f"schema installed: {schema['id']} -> {dest}")
+    print(f"risk tier: confirm (AI-generated — edit the JSON to relax it)")
+    print("rescan the toolbox (Tools -> Scan) to activate it.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -139,6 +139,27 @@ class ToolsWireTest {
     }
 
     @Test
+    fun `mkdir flag round-trips through schema decode`() {
+        // bridge >= 0.4.2: outdir args may declare auto-create; the app
+        // parses it (leniently — schemas without it decode as before) and
+        // only uses it for a form hint. Single-line JSON: synthetic payload.
+        val resp = BridgeClient.jsonFormat.decodeFromString(
+            dev.trmx.gui.model.ToolsResponse.serializer(),
+            """{"tools":[{"schema":{"id":"mk","name":"MK","description":"","binary":"mk","args":""" +
+            """[{"name":"outdir","label":"Out","type":"path","path_kind":"dir","mkdir":true}]},""" +
+            """"installed":true}]}""")
+        val arg = resp.tools[0].schema.args[0]
+        assertTrue(arg.mkdir)
+        assertEquals("dir", arg.path_kind)
+        // and absence decodes to the default (forward compatibility)
+        val plain = BridgeClient.jsonFormat.decodeFromString(
+            dev.trmx.gui.model.ToolsResponse.serializer(),
+            """{"tools":[{"schema":{"id":"p","name":"P","description":"","binary":"p","args":""" +
+            """[{"name":"outdir","type":"path","path_kind":"dir"}]},"installed":false}]}""")
+        assertEquals(false, plain.tools[0].schema.args[0].mkdir)
+    }
+
+    @Test
     fun `arg-invalid surfaces as a typed error`() = runTest {
         server.enqueue(MockResponse().setResponseCode(400).setBody(
             """{"error":{"code":"ARG_INVALID","message":"arg 'url': must be an http(s):// URL","field":"url"}}""")

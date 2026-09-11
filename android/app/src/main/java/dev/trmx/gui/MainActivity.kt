@@ -41,6 +41,7 @@ import dev.trmx.gui.model.ToolExample
 import dev.trmx.gui.ui.ChainsScreen
 import dev.trmx.gui.ui.DashboardScreen
 import dev.trmx.gui.ui.DiagnosticsSheet
+import dev.trmx.gui.ui.SchemaBuilderScreen
 import dev.trmx.gui.ui.FilesScreen
 import dev.trmx.gui.ui.JobDetailScreen
 import dev.trmx.gui.ui.SubmitDialog
@@ -52,7 +53,7 @@ import dev.trmx.gui.ui.WizardScreen
 import dev.trmx.gui.wizard.WizardStep
 import java.io.File
 
-private enum class Screen { DASHBOARD, FILES, TOOLBOX, CHAINS }
+private enum class Screen { DASHBOARD, FILES, TOOLBOX, CHAINS, AI_BUILDER }
 
 private const val FILE_PROVIDER = "dev.trmx.gui.fileprovider"
 
@@ -92,6 +93,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
     val output by vm.output.collectAsStateWithLifecycle()
     val filesState by vm.files.collectAsStateWithLifecycle()
     val toolsState by vm.tools.collectAsStateWithLifecycle()
+    val schemaBuilder by vm.schemaBuilder.collectAsStateWithLifecycle()
     val toolFormState by vm.toolForm.collectAsStateWithLifecycle()
     val chainsState by vm.chains.collectAsStateWithLifecycle()
     val recipes by vm.recipes.collectAsStateWithLifecycle()
@@ -201,7 +203,9 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                 )
             } else {
                 // ---- main shell: bottom navigation (Phase 9.5) -----------
-                BackHandler(enabled = screen != Screen.DASHBOARD) { screen = Screen.DASHBOARD }
+                BackHandler(enabled = screen != Screen.DASHBOARD) {
+                    screen = if (screen == Screen.AI_BUILDER) Screen.TOOLBOX else Screen.DASHBOARD
+                }
                 Scaffold(
                     bottomBar = {
                         // Commercial M3 NavigationBar (P4): OLED black,
@@ -240,7 +244,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                                 label = { Text("Files", style = MaterialTheme.typography.labelSmall) },
                                 colors = TrmxNavItemColors())
                             NavigationBarItem(
-                                selected = screen == Screen.TOOLBOX,
+                                selected = screen == Screen.TOOLBOX || screen == Screen.AI_BUILDER,
                                 onClick = { screen = Screen.TOOLBOX },
                                 icon = {
                                     Icon(
@@ -315,12 +319,28 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                                 onShareRecipe = vm::shareRecipe,
                                 onImportRecipe = vm::importRecipe,
                                 onOpenChains = { screen = Screen.CHAINS },
+                                onOpenSchemaBuilder = { screen = Screen.AI_BUILDER },
                                 onSubmitName = vm::editName,
                                 onSubmitArgv = vm::editArgvText,
                                 onSubmitCwd = vm::editCwd,
                                 onSubmitTimeout = vm::editTimeout,
                                 onSubmitJob = vm::submitJob,
                                 onDismissSubmit = vm::clearSubmitErrors,
+                                modifier = Modifier.padding(padding),
+                            )
+                        }
+                        Screen.AI_BUILDER -> {
+                            LaunchedEffect(Unit) { vm.loadTools() }
+                            SchemaBuilderScreen(
+                                state = schemaBuilder,
+                                aiToolInstalled = toolsState.tools
+                                    .firstOrNull { it.schema.id == "ai-schema-builder" }
+                                    ?.installed,
+                                onEditDescription = vm::editSchemaDescription,
+                                onSubmit = vm::submitSchemaBuilder,
+                                onOpenToolbox = { screen = Screen.TOOLBOX },
+                                onOpenJob = { vm.selectJob(it) },
+                                onBack = { screen = Screen.TOOLBOX },
                                 modifier = Modifier.padding(padding),
                             )
                         }

@@ -6,6 +6,34 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Added — AI round: Schema Builder + `trmx-ai` wrapper (2026-09-11, ADR-014)
+- **`termux/trmx-ai`** (new): describe a tool in plain words → configured
+  LLM CLI (`~/.trmx/ai.json`, default `ollama run llama3.2`) → strict
+  §7.2 validation of the UNTRUSTED output → `~/.trmx/tools/ai-<id>.json`.
+  Never overwrites; AI-generated tools pinned to `confirm` tier; loud
+  setup/parse errors (exit 3/4/5). Installed to `~/.trmx/bin` by
+  install.sh; SHA256SUMS covers it.
+- **Bridge v0.4.2 — bundled `ai-schema-builder` schema** so the app runs
+  the wrapper as a normal tool job (positional description, optional
+  `--model`).
+- **Schema Builder screen** (P4 components only): description field,
+  example chips, sticky 48 dp Generate action, availability hint when
+  `trmx-ai` is missing, event-wired rescan (job completion → toolbox
+  refresh), result card with Open Toolbox / view job. Entry card in the
+  Toolbox. Back → Toolbox; Tools tab stays selected.
+- Tests: `test_ai_wrapper.py` (17, fake backends), bridge e2e (fake
+  trmx-ai → job → refresh → registry), ToolsWireTest mkdir round-trip.
+
+### Fixed — engine: auto-create missing output directories (bridge v0.4.2)
+- New §7.2 arg attribute `mkdir: true` (dir args only): a missing
+  directory is created at submit — parents too, `mkdir -p` semantics,
+  confined to §6.1 writable roots — instead of `404 PATH_NOT_FOUND`.
+  Applied to yt-dlp (`-P`) and aria2c (`-d`) `outdir` (default
+  `~/downloads`); input dirs (http-server serve folder) keep the
+  existence check. Malformed `mkdir` usage (non-dir / non-bool) is
+  rejected at schema validation. App parses the flag and shows
+  "folder is created if missing" in the form.
+
 ### Changed — UX-audit P4: commercial-grade component rebuild (2026-09-11, app-only, ADR-013 addendum)
 - **Zero OS emojis, anywhere.** Every glyph icon replaced with Material
   Symbols vectors (`material-icons-extended`): navigation, file rows,

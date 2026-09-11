@@ -15,7 +15,7 @@
     { "name": "rate", "label": "Rate limit", "type": "string", "required": false,
       "pattern": "^\\d+[KM]$", "argv": ["-r", "{value}"] },
     { "name": "outdir", "label": "Output folder", "type": "path", "path_kind": "dir",
-      "default": "~/downloads", "argv": ["-P", "{value}"] }
+      "default": "~/downloads", "argv": ["-P", "{value}"], "mkdir": true }
   ],
   "examples": [
     { "label": "MP4, best quality", "args": { "url": "https://example.com/watch?v=xyz", "format": "mp4" } }

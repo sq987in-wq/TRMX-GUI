@@ -438,3 +438,44 @@ APK from this round's CI run (check the run page for the artifact).
 - [ ] Unsafe tools still show the RUN confirmation dialog.
 - [ ] Dotfiles hidden by default; Files details sheet works.
 - [ ] Recipes/chains persist across app restart.
+
+---
+
+## Round 5 — engine fix + AI round (2026-09-11)
+
+### Auto-created output dirs (bridge v0.4.2)
+- [ ] Update the backend first (Diagnostics → reinstall / installer) so
+      the phone runs bridge 0.4.2 (`Diagnostics → Bridge` shows the
+      version) and `~/.trmx/bin/trmx-ai` exists.
+- [ ] Delete `~/downloads` (Files → long-press → delete), then run
+      yt-dlp with the default output folder: the job must start and the
+      folder must exist afterwards (check in Files). No 404 toast.
+- [ ] Same for aria2c (Fast Downloader).
+- [ ] http-server still REFUSES a missing folder (that's an input dir):
+      point it at `~/nope` → 404 PATH_NOT_FOUND with field `dir`.
+- [ ] Tool form shows "(folder is created if missing)" under the
+      yt-dlp outdir field.
+
+### AI Schema Builder
+- [ ] Set up a backend once: `pkg install ollama` (+ pull a model), or
+      write `~/.trmx/ai.json` pointing `command` at another CLI.
+- [ ] Toolbox → "AI Schema Builder" card → screen with description
+      field, example chips, sticky Generate button.
+- [ ] Without trmx-ai installed the screen shows the red hint card
+      (install it to see both states).
+- [ ] Type e.g. "convert webp images to png with cwebp" → Generate →
+      job runs (live output under Jobs) → on completion the screen
+      shows "schema installed — toolbox rescanned" and the new tool
+      appears in the Toolbox with the confirm tier (running it asks
+      for confirmation).
+- [ ] Trashing the description (e.g. "make it do everything") either
+      produces a rejected-output error (exit 4, visible in job output)
+      or a valid schema — never a crash, never a file written on
+      rejection.
+- [ ] Generating the same tool twice → "refusing to overwrite" in the
+      job output.
+
+### Regression invariants (unchanged behavior)
+- [ ] Bridge still loopback-only; token auth unchanged.
+- [ ] Existing tools submit exactly as before (argv preview identical).
+- [ ] JVM + python suites green in CI (run for this commit).

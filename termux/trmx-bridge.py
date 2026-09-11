@@ -55,7 +55,7 @@ from collections import deque
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 PROTOCOL_VERSIONS = [1]
 
 LOG = logging.getLogger("trmx-bridge")
@@ -508,6 +508,23 @@ BUNDLED_TOOL_SCHEMAS: list[dict] = [
         ],
         "examples": [],
     },
+    {
+        "id": "ai-schema-builder",
+        "name": "AI Schema Builder",
+        "description": "Describe a command-line tool in plain words; the local LLM wrapper (trmx-ai) drafts a validated schema and installs it to ~/.trmx/tools/. Rescan the toolbox afterwards.",
+        "binary": "trmx-ai",           # ~/.trmx/bin — resolve_binary probes it first
+        "risk_tier": "safe",           # fixed pipeline; the GENERATED tool is pinned to "confirm" by the wrapper (ADR-014)
+        "fixed_argv": [],
+        "args": [
+            {"name": "description", "label": "What should the tool do?", "type": "string",
+             "required": True,
+             "help": "Name the binary and what it should do, in plain words."},
+            {"name": "model", "label": "Model override", "type": "string",
+             "required": False, "pattern": r"^[\w.-]{1,64}$",
+             "argv": ["--model", "{value}"]},
+        ],
+        "examples": [],
+    },
     # ---- system / network --------------------------------------------------
     {
         "id": "http-server",
@@ -564,7 +581,7 @@ BUNDLED_TOOL_SCHEMAS: list[dict] = [
             {"name": "rate", "label": "Rate limit", "type": "string", "required": False,
              "pattern": r"^\d+[KM]$", "argv": ["-r", "{value}"]},
             {"name": "outdir", "label": "Output folder", "type": "path", "path_kind": "dir",
-             "default": "~/downloads", "argv": ["-P", "{value}"]},
+             "default": "~/downloads", "argv": ["-P", "{value}"], "mkdir": True},
         ],
         "examples": [
             {"label": "MP4, best quality",
@@ -613,7 +630,7 @@ BUNDLED_TOOL_SCHEMAS: list[dict] = [
         "args": [
             {"name": "url", "label": "Download URL", "type": "url", "required": True},
             {"name": "outdir", "label": "Output folder", "type": "path", "path_kind": "dir",
-             "default": "~/downloads", "argv": ["-d", "{value}"]},
+             "default": "~/downloads", "argv": ["-d", "{value}"], "mkdir": True},
             {"name": "connections", "label": "Connections per server", "type": "int",
              "required": False, "min": 1, "max": 16, "default": 4,
              "argv": ["-x", "{value}"]},
@@ -711,6 +728,11 @@ class ToolRegistry:
             elif tmpl is not None:
                 if sum(x.count("{value}") for x in tmpl) != 1:
                     raise ValueError(f"arg '{a['name']}': argv must contain {{value}} exactly once")
+            if "mkdir" in a:
+                if a.get("path_kind") != "dir":
+                    raise ValueError(f"arg '{a['name']}': mkdir requires path_kind 'dir'")
+                if not isinstance(a["mkdir"], bool):
+                    raise ValueError(f"arg '{a['name']}': mkdir must be a boolean")
             if a.get("pattern"):
                 try:
                     re.compile(a["pattern"])
@@ -846,15 +868,31 @@ class ToolRegistry:
     def _resolve_path_arg(self, a: dict, raw: str) -> str:
         """Path args are resolved against the §6.1 policy and substituted as
         ABSOLUTE paths — argv is exec'd without a shell, so '~' would never
-        expand (ADR-009)."""
+        expand (ADR-009).
+
+        `mkdir: true` (§7.2, dir args only — output folders like yt-dlp's
+        -P / aria2c's -d): a missing directory is CREATED (parents too,
+        `mkdir -p` semantics) instead of failing PATH_NOT_FOUND. Creation
+        resolves with WRITE semantics, so it stays inside the §6.1 writable
+        roots; input dirs (e.g. http-server's serve folder) keep the
+        existence check."""
         name = a["name"]
+        auto_mkdir = bool(a.get("mkdir"))
         try:
-            resolved = self.policy.resolve_in_roots(raw, for_write=a.get("path_kind") != "dir")
+            resolved = self.policy.resolve_in_roots(
+                raw, for_write=auto_mkdir or a.get("path_kind") != "dir")
         except BridgeError as e:
             raise BridgeError(e.status, e.code, f"arg '{name}': {e.message}", field=name) from e
         if a.get("path_kind") == "dir" and not resolved.is_dir():
-            raise BridgeError(404, "PATH_NOT_FOUND",
-                              f"arg '{name}': directory does not exist: {raw}", field=name)
+            if not auto_mkdir:
+                raise BridgeError(404, "PATH_NOT_FOUND",
+                                  f"arg '{name}': directory does not exist: {raw}", field=name)
+            try:
+                resolved.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                raise BridgeError(400, "VALIDATION_FAILED",
+                                  f"arg '{name}': cannot create directory {raw}: {e}",
+                                  field=name) from e
         return str(resolved)
 
     @staticmethod

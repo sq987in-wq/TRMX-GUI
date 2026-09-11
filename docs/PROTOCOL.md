@@ -273,7 +273,7 @@ Response `200` (`list`): `{ "tools": [ToolStatus…] }` where `ToolStatus = { "s
     { "name": "rate",   "label": "Rate limit", "type": "string", "required": false,
       "pattern": "^\\d+[KM]$", "argv": ["-r", "{value}"] },
     { "name": "outdir", "label": "Output folder", "type": "path", "path_kind": "dir",
-      "default": "~/downloads", "argv": ["-P", "{value}"] }
+      "default": "~/downloads", "argv": ["-P", "{value}"], "mkdir": true }
   ],
   "examples": [ { "label": "MP4, best quality", "args": { "url": "https://…", "format": "mp4" } } ]
 }
@@ -282,6 +282,7 @@ Response `200` (`list`): `{ "tools": [ToolStatus…] }` where `ToolStatus = { "s
 Rules (bridge-enforced at submit for `type:"tool"`):
 - Final argv = `[binary] + fixed_argv + (for each arg present, in schema order: its `argv` tokens)`. Required args must be present. `bool` args contribute their tokens iff true (and may not contain `{value}`). Non-bool `argv` must contain `{value}` exactly once.
 - Arg types: `string` · `int` (with optional `min`/`max`) · `float` (`min`/`max`) · `bool` · `enum` · `path` (with `path_kind`: `file`|`dir`; validated against §6.1 policy — `write` semantics for `file` paths not under a writable root are rejected) · `url` (must parse as `http(s)://`).
+- `mkdir: true` (dir args only, bridge ≥ 0.4.2): the directory is CREATED at submit if missing — parents too (`mkdir -p` semantics) — instead of `404 PATH_NOT_FOUND`. Resolution uses **write** semantics, so creation is confined to the §6.1 writable roots. For *output* folders (yt-dlp `-P`, aria2c `-d`); input folders (e.g. http-server's serve dir) keep the existence check. Schemas with `mkdir` on a non-dir arg are rejected as malformed.
 - `pattern` (RE2-safe regex) applies to `string`/`url` pre-validated strings.
 - `progress_regex`: first capture group parsed as the percent for `progress_pct`; the matched line populates `progress_detail`. Absent → both null.
 - `risk_tier` ∈ `safe|confirm|destructive` — the *app* renders confirmation UX per tier; the bridge audit-logs the tier with the job. Tiers do not replace path/argv validation.

@@ -205,6 +205,7 @@ data class ToolArg(
     val min: Double? = null,
     val max: Double? = null,
     val path_kind: String? = null,    // file|dir
+    val mkdir: Boolean = false,       // dir args: created at submit if missing (bridge >= 0.4.2)
     val x_trmx: XTrmx? = null,        // optional UI hints (never affect validation)
 )
 

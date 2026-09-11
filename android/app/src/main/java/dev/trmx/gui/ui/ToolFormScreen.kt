@@ -246,6 +246,13 @@ private fun Field(
     var secretRevealed by rememberSaveable(a.name) { mutableStateOf(false) }
     val widget = FormEngine.widgetFor(a)
     val fieldLabel = a.label.ifEmpty { a.name } + if (a.required) " *" else ""
+    val autoMkdir = a.mkdir && a.path_kind == "dir"
+    val helpText = when {
+        a.help != null && autoMkdir -> a.help + " (folder is created if missing)"
+        a.help != null -> a.help
+        autoMkdir -> "folder is created if missing"
+        else -> null
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(Sp.xs)) {
         // Text fields carry their label INSIDE the outline (M3 floating
@@ -301,7 +308,7 @@ private fun Field(
                 supportingText = {
                     when {
                         err != null -> Text(err, color = MaterialTheme.colorScheme.error)
-                        a.help != null -> Text(a.help)
+                        helpText != null -> Text(helpText)
                     }
                 },
                 trailingIcon = when {
@@ -343,8 +350,8 @@ private fun Field(
             if (err != null) {
                 Text(err, style = MaterialTheme.typography.bodySmall,
                      color = MaterialTheme.colorScheme.error)
-            } else if (a.help != null) {
-                Text(a.help, style = MaterialTheme.typography.bodySmall,
+            } else if (helpText != null) {
+                Text(helpText, style = MaterialTheme.typography.bodySmall,
                      color = P.TextSecondary)
             }
         }
