@@ -1511,7 +1511,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             if (it.id == bound.id) it.copy(
                                 state = if (job.status in TERMINAL) "stopped" else "running",
                                 last_status = job.status,
-                                last_exit_code = job.exit_code,
+                                last_exit_code = job.exit_code?.toInt(),   // Long? -> Int?
                                 job_id = if (job.status in TERMINAL) null else job.job_id)
                             else it
                         })
