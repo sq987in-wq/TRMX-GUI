@@ -7,10 +7,12 @@ import dev.trmx.gui.net.BridgeClient
 import dev.trmx.gui.net.BridgeResult
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -91,10 +93,10 @@ class ServicesWireTest {
         assertEquals("running", web.state)
         assertEquals("J-4", web.job_id)
         assertTrue(web.autostart)
-        assertEquals(8000, web.args["port"]!!.content.toInt())
+        assertEquals(8000, web.args["port"]!!.jsonPrimitive.content.toInt())
         val fetch = out.data.services[1]
         assertEquals("stopped", fetch.state)
-        assertEquals(null, fetch.job_id)
+        assertNull(fetch.job_id)
         assertEquals(0, fetch.last_exit_code)
     }
 
