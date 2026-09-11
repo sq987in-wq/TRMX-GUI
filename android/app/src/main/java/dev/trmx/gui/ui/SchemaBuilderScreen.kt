@@ -94,6 +94,11 @@ fun SchemaBuilderScreen(
             onSetCommand = onSetAiCommand,
             onSave = onSaveConfig,
             onBack = { showConfig = false },
+            // CRITICAL (bug round): without the Scaffold inner padding the
+            // sticky Save renders UNDER the NavigationBar — the button
+            // "disappears". Every screen-level composable must consume its
+            // modifier; the editor is no exception.
+            modifier = modifier,
         )
         return
     }
@@ -105,7 +110,9 @@ fun SchemaBuilderScreen(
             onBack = onBack,
             actions = {
                 IconButton(onClick = {
-                    onLoadConfig()
+                    // Load once; re-opening must NOT clobber unsaved edits
+                    // (state lives in the ViewModel and survives back).
+                    if (!config.loaded) onLoadConfig()
                     showConfig = true
                 }) {
                     Icon(Icons.Outlined.Tune, contentDescription = "AI backend settings",
@@ -255,11 +262,14 @@ private fun AiConfigEditor(
     onSetCommand: (String) -> Unit,
     onSave: () -> Unit,
     onBack: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var keyVisible by remember { mutableStateOf(false) }
     val cloud = state.mode == "http_api"
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    // modifier carries the Scaffold innerPadding — the sticky Save sits
+    // ABOVE the bottom NavigationBar because of it.
+    Column(modifier = modifier.fillMaxSize()) {
         TrmxTopBar(
             title = "AI Backend",
             subtitle = "~/.trmx/ai.json",
@@ -413,7 +423,7 @@ private fun AiConfigEditor(
         Surface(color = P.Background, modifier = Modifier.fillMaxWidth()) {
             Box(modifier = Modifier.padding(Sp.m)) {
                 TrmxButton(
-                    label = if (state.saving) "Saving…" else "Save Backend",
+                    label = if (state.saving) "Saving…" else "Save Configuration",
                     onClick = onSave,
                     enabled = state.loaded && !state.saving,
                     modifier = Modifier.fillMaxWidth().height(48.dp),

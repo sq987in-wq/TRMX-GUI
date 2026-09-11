@@ -6,6 +6,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Fixed — AI Backend editor: Save button occluded by the NavigationBar (2026-09-11)
+- Root cause: `AiConfigEditor` ignored the screen `modifier` — its root
+  Column was `fillMaxSize()` WITHOUT the Scaffold innerPadding, so the
+  sticky 48 dp Save rendered at the absolute screen bottom, underneath
+  the bottom NavigationBar (invisible, untappable). The editor now
+  consumes the modifier like every screen-level composable.
+- Re-opening the editor no longer wipes unsaved edits: the header
+  action forced a config reload on every open; it now loads once
+  (`loaded` flag) — field state lives in the ViewModel and survives
+  back navigation. Label per spec: "Save Configuration".
+- ON-DEVICE-TEST round 8 gains a Save-visibility + persistence bullet.
+
 ### Added — native AI backend configuration (bridge v0.5.1, protocol 1.1 §15)
 - **`GET/POST /v1/ai/config`**: edit `~/.trmx/ai.json` from the app
   instead of hand-editing in Termux. GET returns a MASKED, normalized

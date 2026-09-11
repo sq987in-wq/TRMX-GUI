@@ -569,6 +569,11 @@ Update the backend first so the phone runs bridge v0.5.1
 ### Editor
 - [ ] Schema Builder → tune icon in the header → "AI Backend" editor
       opens showing the CURRENT config (mode + values from the phone).
+- [ ] The "Save Configuration" button is VISIBLE at the bottom of the
+      editor, ABOVE the bottom navigation bar, without scrolling.
+- [ ] Type some edits → top back arrow → reopen: the edits are still
+      there (no wipe). Discard by leaving the whole screen; persist
+      with Save ("backend saved" notice appears).
 - [ ] Mode chips: "Cloud API" / "Offline (Ollama)" switch the form.
 - [ ] Cloud: provider chips (groq/openai/gemini/openai_compatible),
       Model + Endpoint fields, masked API key field with the eye
