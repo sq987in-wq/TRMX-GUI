@@ -247,8 +247,8 @@ private fun OutputConsole(
         }
     }
 
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    TrmxCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(Sp.m), verticalArrangement = Arrangement.spacedBy(Sp.s)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Output", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 val live = output.error == null && !output.ended
