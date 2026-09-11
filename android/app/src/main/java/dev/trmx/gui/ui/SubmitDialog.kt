@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,36 +34,29 @@ fun SubmitDialog(
         title = { Text("New job") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
+                TrmxTextField(
                     value = state.name,
                     onValueChange = onName,
-                    label = { Text("Name (optional)") },
-                    singleLine = true,
-                    colors = TrmxFieldColors(),
+                    label = "Name (optional)",
                     modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(
+                TrmxTextField(
                     value = state.argvText,
                     onValueChange = onArgv,
-                    label = { Text("Arguments — one per line") },
+                    label = "Arguments — one per line",
                     placeholder = {
                         Text("ffmpeg\n-i ~/in.mkv\n~/out.mp4", fontFamily = FontFamily.Monospace)
                     },
                     minLines = 4,
-                    colors = TrmxFieldColors(),
                     modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(
+                TrmxTextField(
                     value = state.cwd,
                     onValueChange = onCwd,
-                    label = { Text("Working directory (optional, default ~)") },
-                    singleLine = true,
-                    colors = TrmxFieldColors(),
+                    label = "Working directory (optional, default ~)",
                     modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(
+                TrmxTextField(
                     value = state.timeoutText,
                     onValueChange = onTimeout,
-                    label = { Text("Timeout in seconds (optional)") },
-                    singleLine = true,
-                    colors = TrmxFieldColors(),
+                    label = "Timeout in seconds (optional)",
                     modifier = Modifier.fillMaxWidth())
                 Text(
                     "Each line is passed to the bridge as exactly one argument — " +

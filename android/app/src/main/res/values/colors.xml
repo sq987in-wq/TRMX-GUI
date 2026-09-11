@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#0B1220</color>
-    <!-- Slate 950 — the terminal-luxe app background (Theme.kt), mirrored
-         here for the window/splash so cold-start never flashes light. -->
-    <color name="trmx_window_bg">#0B1220</color>
+    <!-- True OLED black (Tokens.Palette.Background) — mirrored here for the
+         window/splash so cold-start never flashes anything lighter. -->
+    <color name="trmx_window_bg">#000000</color>
 </resources>

@@ -1,13 +1,11 @@
 package dev.trmx.gui.ui
 
 /*
- * Home = Command Center (UX-audit P1+P2, ADR-012).
- *   1. status pill (connected / N running / error) → opens Diagnostics
- *   2. hero workspace when idle — an inviting start, not a dead task list
- *   3. INTENT cards for the full runtime (never just a downloader):
- *      Download media · Convert/transcode · Run a command · Start a service
- *   4. tasks with human labels (JobLabels), J-ID secondary copyable
- *   5. quick run (saved recipes)
+ * Home = Command Center (UX-audit P1–P3, ADR-012/013), per the
+ * home_dashboard blueprint: compact status pill → hero workspace (idle) →
+ * 4 prominent intent cards for the FULL runtime → active & recent task
+ * OUTCOME cards → quick run (recipes). Built exclusively from Trmx
+ * components + Tokens — zero ad-hoc styling.
  */
 
 import androidx.compose.foundation.BorderStroke
@@ -23,7 +21,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -40,6 +37,7 @@ import dev.trmx.gui.DashboardState
 import dev.trmx.gui.model.JobSummary
 import dev.trmx.gui.store.Recipe
 import dev.trmx.gui.tools.JobLabels
+import dev.trmx.gui.ui.Tokens.Palette as P
 
 @Composable
 fun DashboardScreen(
@@ -60,14 +58,14 @@ fun DashboardScreen(
         verticalArrangement = Arrangement.spacedBy(Sp.m),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("TRMX", fontSize = 32.sp, fontWeight = FontWeight.Bold)
+            Text("TRMX", fontSize = 28.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
             StatusPill(state, onOpenDiagnostics)
         }
 
         state.notice?.let {
             Text(it, style = MaterialTheme.typography.bodySmall,
-                 color = MaterialTheme.colorScheme.primary)
+                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         state.error?.let {
             Text(it, style = MaterialTheme.typography.bodySmall,
@@ -81,7 +79,12 @@ fun DashboardScreen(
         IntentGrid(onOpenIntent = onOpenIntent, onOpenCustom = onOpenCustom)
 
         if (state.jobs.isNotEmpty()) {
-            TasksCard(state.jobs, onJobClick)
+            Text("Active & recent",
+                 style = MaterialTheme.typography.titleMedium,
+                 fontWeight = FontWeight.Bold)
+            state.jobs.take(10).forEach { job ->
+                TaskOutcomeCard(job, onJobClick)
+            }
         }
 
         if (recipes.isNotEmpty()) {
@@ -96,31 +99,31 @@ private fun StatusPill(state: DashboardState, onOpenDiagnostics: () -> Unit) {
     val connected = state.error == null
     val running = state.info?.load?.jobs_running ?: 0
     val (label, color) = when {
-        !connected -> "● connection error" to MaterialTheme.colorScheme.error
-        state.refreshing -> "○ refreshing" to TrmxColors.Running
-        running > 0 -> "● $running running" to TrmxColors.Running
-        else -> "● connected" to TrmxColors.Completed
+        !connected -> "● connection error" to P.Danger
+        state.refreshing -> "○ refreshing" to P.Accent
+        running > 0 -> "● $running running" to P.Accent
+        else -> "● connected" to P.Steel
     }
     Surface(
         shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = P.Surface,
         border = BorderStroke(1.dp, color.copy(alpha = 0.45f)),
         modifier = Modifier.clickable(onClick = onOpenDiagnostics),
     ) {
         Text(
             "$label  ⚙",
             color = color,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Medium,
             fontSize = 12.sp,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
         )
     }
 }
 
-/** Idle Home: an inviting workspace instead of a dead task list (P2). */
+/** Idle Home: an inviting workspace instead of a dead task list. */
 @Composable
 private fun HeroWorkspace() {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    TrmxCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(Sp.l),
             verticalArrangement = Arrangement.spacedBy(Sp.xs),
@@ -133,15 +136,14 @@ private fun HeroWorkspace() {
                 "Run tools, scripts and services locally — no cloud, no root. " +
                     "Start with a goal:",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                color = P.TextSecondary)
         }
     }
 }
 
 /**
- * Intent-based action cards for the FULL runtime (P2): TRMX is not a
- * downloader — download, convert, arbitrary commands and long-running
- * services are one tap away, on equal footing.
+ * Intent cards for the FULL runtime (never just a downloader): download,
+ * convert, arbitrary commands, long-running services — equal footing.
  */
 @Composable
 private fun IntentGrid(
@@ -180,10 +182,9 @@ private fun IntentCard(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
+    TrmxCard(
+        modifier = modifier.fillMaxWidth(),
+        onClick = onClick,
     ) {
         Column(
             modifier = Modifier.padding(Sp.m),
@@ -193,7 +194,7 @@ private fun IntentCard(
             Text(title, fontWeight = FontWeight.Medium,
                  style = MaterialTheme.typography.bodyLarge)
             Text(sub, style = MaterialTheme.typography.bodySmall,
-                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+                 color = P.TextSecondary)
         }
     }
 }
@@ -201,12 +202,13 @@ private fun IntentCard(
 /** Saved recipes: the fastest path from goal to filled form. */
 @Composable
 private fun QuickRunCard(recipes: List<Recipe>, onOpenRecipe: (String) -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    TrmxCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(Sp.m),
             verticalArrangement = Arrangement.spacedBy(Sp.s),
         ) {
-            Text("Quick run", fontWeight = FontWeight.Bold)
+            Text("Quick run", fontWeight = FontWeight.Bold,
+                 style = MaterialTheme.typography.titleMedium)
             recipes.take(4).forEach { r ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -214,88 +216,73 @@ private fun QuickRunCard(recipes: List<Recipe>, onOpenRecipe: (String) -> Unit) 
                         .fillMaxWidth()
                         .clickable { onOpenRecipe(r.id) },
                 ) {
-                    Text("▸", color = MaterialTheme.colorScheme.primary)
+                    Text("▸", color = P.Accent)
                     Spacer(Modifier.width(Sp.s))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(r.title, style = MaterialTheme.typography.bodyLarge,
                              maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(r.toolId, style = MaterialTheme.typography.bodySmall,
-                             color = MaterialTheme.colorScheme.onSurfaceVariant)
+                             color = P.TextSecondary)
                     }
-                    Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("›", color = P.TextMuted)
                 }
             }
         }
     }
 }
 
-/** Tasks: human label first, status verb, relative time, J-ID copyable. */
+/** One task = one outcome card: human label, status verb, J-ID copyable. */
 @Composable
-private fun TasksCard(jobs: List<JobSummary>, onJobClick: (String) -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+private fun TaskOutcomeCard(job: JobSummary, onJobClick: (String) -> Unit) {
+    TrmxCard(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = { onJobClick(job.job_id) },
+    ) {
         Column(
             modifier = Modifier.padding(Sp.m),
-            verticalArrangement = Arrangement.spacedBy(Sp.s),
+            verticalArrangement = Arrangement.spacedBy(Sp.xs),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Tasks", fontWeight = FontWeight.Bold)
-                Spacer(Modifier.weight(1f))
-                Text("${jobs.size}",
-                     style = MaterialTheme.typography.bodySmall,
-                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    JobLabels.taskLabel(job),
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    JobLabels.statusVerb(job.status),
+                    color = TrmxColors.status(job.status),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                )
             }
-            jobs.take(20).forEach { job -> TaskRow(job, onJobClick) }
-        }
-    }
-}
-
-@Composable
-private fun TaskRow(job: JobSummary, onJobClick: (String) -> Unit) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onJobClick(job.job_id) },
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                JobLabels.taskLabel(job),
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                JobLabels.statusVerb(job.status),
-                color = TrmxColors.status(job.status),
-                fontWeight = FontWeight.Bold,
-                fontSize = 12.sp,
-            )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                JobLabels.subtitle(job),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            CopyableId(job.job_id)
-        }
-        if (job.progress_pct != null) {
-            LinearProgressIndicator(
-                progress = { (job.progress_pct / 100.0).toFloat() },
-                modifier = Modifier.fillMaxWidth())
-            job.progress_detail?.let {
-                Text("  $it", fontFamily = FontFamily.Monospace, fontSize = 11.sp,
-                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    JobLabels.subtitle(job),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = P.TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                CopyableId(job.job_id)
             }
-        } else {
-            job.progress_detail?.let {
-                Text("  $it", fontFamily = FontFamily.Monospace, fontSize = 11.sp,
-                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (job.progress_pct != null) {
+                LinearProgressIndicator(
+                    progress = { (job.progress_pct / 100.0).toFloat() },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = P.Accent, trackColor = P.SurfaceHighest)
+                job.progress_detail?.let {
+                    Text("  $it", fontFamily = FontFamily.Monospace, fontSize = 11.sp,
+                         color = P.TextMuted)
+                }
+            } else {
+                job.progress_detail?.let {
+                    Text("  $it", fontFamily = FontFamily.Monospace, fontSize = 11.sp,
+                         color = P.TextMuted)
+                }
             }
         }
     }

@@ -20,12 +20,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -67,19 +64,20 @@ fun DiagnosticsSheet(
             if (info != null) {
                 BridgeInfoCard(info)
             } else {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                TrmxCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         if (state.refreshing) "loading bridge info…" else "no bridge info yet",
-                        modifier = Modifier.padding(14.dp))
+                        modifier = Modifier.padding(Sp.m))
                 }
             }
 
             ActionFlowRow {
-                Button(onClick = onRefresh, enabled = !state.refreshing) {
-                    Text(if (state.refreshing) "Refreshing…" else "Refresh")
-                }
-                OutlinedButton(onClick = onRerunWizard) { Text("Re-run setup") }
-                OutlinedButton(onClick = onStopBridge) { Text("Stop bridge") }
+                TrmxButton(label = if (state.refreshing) "Refreshing…" else "Refresh",
+                           onClick = onRefresh, enabled = !state.refreshing)
+                TrmxButton(label = "Re-run setup", onClick = onRerunWizard,
+                           kind = TrmxButtonKind.Secondary)
+                TrmxButton(label = "Stop bridge", onClick = onStopBridge,
+                           kind = TrmxButtonKind.Danger)
             }
 
             Text(
@@ -93,7 +91,7 @@ fun DiagnosticsSheet(
 
 @Composable
 private fun BridgeInfoCard(info: dev.trmx.gui.model.SystemInfo) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    TrmxCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(Sp.m), verticalArrangement = Arrangement.spacedBy(Sp.xs)) {
             Text("Bridge", fontWeight = FontWeight.Bold)
             KeyValue("version", info.bridge_version)

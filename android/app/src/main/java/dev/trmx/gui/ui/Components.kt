@@ -1,28 +1,43 @@
 package dev.trmx.gui.ui
 
 /*
- * Shared UI primitives (UX-audit round, ADR-012).
+ * TRMX component foundation (UX-audit P3, ADR-013): the reusable widgets
+ * every screen is built from. Adding a future screen (AI schema builder,
+ * services, daemon settings) means composing these — zero ad-hoc styling.
  *
- * ActionFlowRow — action button clusters WRAP to the next line instead of
- *   squeezing the last button into a vertical sliver. That sliver was the
- *   "Sto / p / brid / ge" bug: a plain Row measures children left to right
- *   and the last child gets only the remaining width, so its label wrapped
- *   mid-word. Every button cluster in the app goes through this wrapper.
- *
- *   Deliberately a hand-rolled Layout (~45 lines) rather than foundation's
- *   FlowRow: FlowRow is experimental + inline, and passing a composable
- *   lambda through its content slot cost three CI rounds (the offline
- *   sandbox cannot compile-check Compose — ADR-006). Stable MeasureScope/
- *   Placeable APIs only, exact spacing control, works on every version.
- * CopyableId — monospace id with a copy affordance. Raw J-IDs stop being
- *   the primary identity of a task but stay one tap away for fail-loud bug
- *   reports.
+ *   TrmxTopBar    — M3 top app bar, token colors, back arrow + title
+ *   TrmxCard      — elevated container: Surface color, 1 dp outline, Radius.l
+ *   TrmxButton    — Primary (ice-cyan) / Secondary (outline) / Ghost / Danger
+ *   TrmxTextField — dark input field, tokens + FieldShape
+ *   ActionFlowRow — action cluster that wraps whole buttons, never squeezes
+ *   CopyableId    — monospace id that copies on tap
  */
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,9 +47,206 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.trmx.gui.ui.Tokens.Palette as P
 
-/** Button cluster that wraps instead of squeezing (see file header). */
+// ---- TrmxTopBar ------------------------------------------------------------
+
+/** Standard screen header: back arrow (optional), title, optional subtitle. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TrmxTopBar(
+    title: String,
+    onBack: (() -> Unit)? = null,
+    subtitle: String? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    TopAppBar(
+        title = {
+            Column {
+                Text(title, style = MaterialTheme.typography.titleLarge)
+                if (subtitle != null) {
+                    Text(subtitle,
+                         style = MaterialTheme.typography.bodySmall,
+                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        },
+        navigationIcon = {
+            if (onBack != null) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "back")
+                }
+            }
+        },
+        actions = actions,
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = P.Background,
+            titleContentColor = P.TextPrimary,
+            navigationIconContentColor = P.TextSecondary,
+            actionIconContentColor = P.TextSecondary,
+        ),
+    )
+}
+
+// ---- TrmxCard ---------------------------------------------------------------
+
+/**
+ * Elevated container on the OLED ground: Surface color + 1 dp outline +
+ * Radius.l. Border-defined elevation (no shadows on black).
+ */
+@Composable
+fun TrmxCard(
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    border: Boolean = true,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val colors = CardDefaults.cardColors(
+        containerColor = P.Surface,
+        contentColor = P.TextPrimary,
+    )
+    val stroke = if (border) BorderStroke(1.dp, P.Border) else null
+    val shape = RoundedCornerShape(Tokens.Radius.l)
+    if (onClick != null) {
+        Card(
+            onClick = onClick,
+            modifier = modifier,
+            shape = shape,
+            colors = colors,
+            border = stroke,
+        ) { content() }
+    } else {
+        Card(
+            modifier = modifier,
+            shape = shape,
+            colors = colors,
+            border = stroke,
+        ) { content() }
+    }
+}
+
+
+// ---- TrmxButton -------------------------------------------------------------
+
+enum class TrmxButtonKind { Primary, Secondary, Ghost, Danger }
+
+/**
+ * The button. Primary = ice-cyan fill (the ONE loud element per screen);
+ * Secondary = quiet outline; Ghost = text-only; Danger = semantic red.
+ */
+@Composable
+fun TrmxButton(
+    label: String,
+    onClick: () -> Unit,
+    kind: TrmxButtonKind = TrmxButtonKind.Primary,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier,
+    leading: (@Composable () -> Unit)? = null,
+) {
+    val shape = RoundedCornerShape(Tokens.Radius.s)
+    when (kind) {
+        TrmxButtonKind.Primary -> Button(
+            onClick = onClick, enabled = enabled, modifier = modifier,
+            shape = shape,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = P.Accent, contentColor = P.OnAccent,
+                disabledContainerColor = P.SurfaceHigh, disabledContentColor = P.TextMuted),
+        ) { ButtonContent(leading, label) }
+
+        TrmxButtonKind.Secondary -> OutlinedButton(
+            onClick = onClick, enabled = enabled, modifier = modifier,
+            shape = shape,
+            border = BorderStroke(1.dp,
+                if (enabled) P.BorderStrong else P.Border),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = P.TextPrimary,
+                disabledContentColor = P.TextMuted),
+        ) { ButtonContent(leading, label) }
+
+        TrmxButtonKind.Ghost -> TextButton(
+            onClick = onClick, enabled = enabled, modifier = modifier,
+            colors = ButtonDefaults.textButtonColors(
+                contentColor = P.TextSecondary,
+                disabledContentColor = P.TextMuted),
+        ) { ButtonContent(leading, label) }
+
+        TrmxButtonKind.Danger -> OutlinedButton(
+            onClick = onClick, enabled = enabled, modifier = modifier,
+            shape = shape,
+            border = BorderStroke(1.dp, if (enabled) P.Danger.copy(alpha = 0.55f) else P.Border),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = P.Danger,
+                disabledContentColor = P.TextMuted),
+        ) { ButtonContent(leading, label) }
+    }
+}
+
+@Composable
+private fun ButtonContent(leading: (@Composable () -> Unit)?, label: String) {
+    if (leading != null) {
+        leading()
+        Spacer(Modifier.width(Sp.xs))
+    }
+    Text(label)
+}
+
+// ---- TrmxTextField ----------------------------------------------------------
+
+/**
+ * The text field: dark SurfaceHigh container, token borders/cursor,
+ * FieldShape. Thin wrapper over M3 OutlinedTextField so every parameter
+ * (visual transformation, keyboard options, trailing icons) stays
+ * available — one place to restyle the world.
+ */
+@Composable
+fun TrmxTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    readOnly: Boolean = false,
+    singleLine: Boolean = true,
+    minLines: Int = 1,
+    isError: Boolean = false,
+    supportingText: (@Composable () -> Unit)? = null,
+    placeholder: (@Composable () -> Unit)? = null,
+    leadingIcon: (@Composable () -> Unit)? = null,
+    trailingIcon: (@Composable () -> Unit)? = null,
+    prefix: (@Composable () -> Unit)? = null,
+    suffix: (@Composable () -> Unit)? = null,
+    visualTransformation: androidx.compose.ui.text.input.VisualTransformation =
+        androidx.compose.ui.text.input.VisualTransformation.None,
+    keyboardOptions: androidx.compose.foundation.text.KeyboardOptions =
+        androidx.compose.foundation.text.KeyboardOptions.Default,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier,
+        enabled = enabled,
+        readOnly = readOnly,
+        singleLine = singleLine,
+        minLines = minLines,
+        isError = isError,
+        shape = FieldShape,
+        colors = TrmxFieldColors(),
+        supportingText = supportingText,
+        placeholder = placeholder,
+        leadingIcon = leadingIcon,
+        trailingIcon = trailingIcon,
+        prefix = prefix,
+        suffix = suffix,
+        visualTransformation = visualTransformation,
+        keyboardOptions = keyboardOptions,
+    )
+}
+
+// ---- ActionFlowRow ----------------------------------------------------------
+
+/** Button cluster that wraps whole buttons instead of squeezing (Ph P0). */
 @Composable
 fun ActionFlowRow(
     modifier: Modifier = Modifier,
@@ -49,7 +261,6 @@ fun ActionFlowRow(
         content = content,
         modifier = modifier,
     ) { measurables, constraints ->
-        // Loose child constraints: each button takes its natural width.
         val child = constraints.copy(minWidth = 0, minHeight = 0)
         val rows = mutableListOf<MutableList<Placeable>>()
         val widths = mutableListOf<Int>()
@@ -91,6 +302,8 @@ fun ActionFlowRow(
     }
 }
 
+// ---- CopyableId -------------------------------------------------------------
+
 /** Small monospace id line that copies itself on tap. */
 @Composable
 fun CopyableId(id: String, modifier: Modifier = Modifier) {
@@ -103,12 +316,12 @@ fun CopyableId(id: String, modifier: Modifier = Modifier) {
             id,
             fontFamily = FontFamily.Monospace,
             fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = P.TextMuted,
         )
         Text(
             " ⧉",
             fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = P.TextMuted,
         )
     }
 }

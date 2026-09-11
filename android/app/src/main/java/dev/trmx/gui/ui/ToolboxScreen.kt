@@ -20,11 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -85,7 +82,8 @@ fun ToolboxScreen(
             Spacer(Modifier.weight(1f))
             if (state.loading) CircularProgressIndicator(strokeWidth = 3.dp)
             Spacer(Modifier.width(8.dp))
-            OutlinedButton(onClick = onRefresh) { Text("scan ⟳") }
+            TrmxButton(label = "scan ⟳", onClick = onRefresh,
+                       kind = TrmxButtonKind.Secondary)
         }
 
         state.notice?.let {
@@ -97,8 +95,8 @@ fun ToolboxScreen(
                  color = MaterialTheme.colorScheme.error)
         }
         if (state.schemaErrors.isNotEmpty()) {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp)) {
+            TrmxCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(Sp.m)) {
                     Text("Some user schemas in ~/.trmx/tools/ were skipped:",
                          fontWeight = FontWeight.Bold,
                          style = MaterialTheme.typography.bodySmall)
@@ -115,12 +113,11 @@ fun ToolboxScreen(
             Text("No tools — tap “scan ⟳”.", color = MaterialTheme.colorScheme.secondary)
         }
 
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { showSubmit = true },
+        TrmxCard(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { showSubmit = true },
         ) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(modifier = Modifier.padding(Sp.m), verticalArrangement = Arrangement.spacedBy(Sp.xs)) {
                 Text("⚡ Custom command", fontWeight = FontWeight.Bold,
                      style = MaterialTheme.typography.bodyLarge)
                 Text("Run any argv directly — one line, one argument. No shell.",
@@ -132,15 +129,15 @@ fun ToolboxScreen(
         state.tools.forEach { t -> ToolCard(t, onOpenTool) { confirmInstall = t } }
 
         // ---- recipes -----------------------------------------------------
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(12.dp),
-                   verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        TrmxCard(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(Sp.m),
+                   verticalArrangement = Arrangement.spacedBy(Sp.s)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Recipes (${recipes.size})", fontWeight = FontWeight.Bold)
                     Spacer(Modifier.weight(1f))
-                    OutlinedButton(onClick = {
-                        importPicker.launch(arrayOf("application/json", "*/*"))
-                    }) { Text("import") }
+                    TrmxButton(label = "import",
+                               onClick = { importPicker.launch(arrayOf("application/json", "*/*")) },
+                               kind = TrmxButtonKind.Secondary)
                 }
                 if (recipes.isEmpty()) {
                     Text("Save a filled tool form as a recipe — it becomes a " +
@@ -165,9 +162,8 @@ fun ToolboxScreen(
             }
         }
 
-        Button(onClick = onOpenChains, modifier = Modifier.fillMaxWidth()) {
-            Text("⛓ Chains — visual pipelines")
-        }
+        TrmxButton(label = "⛓ Chains — visual pipelines",
+                   onClick = onOpenChains, modifier = Modifier.fillMaxWidth())
     }
 
     if (showSubmit) {
@@ -207,10 +203,9 @@ fun ToolboxScreen(
 
 @Composable
 private fun ToolCard(t: ToolStatus, onOpenTool: (String) -> Unit, onInstall: () -> Unit) {
-    Card(modifier = Modifier
-        .fillMaxWidth()
-        .clickable(enabled = t.installed) { onOpenTool(t.schema.id) }) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    TrmxCard(modifier = Modifier.fillMaxWidth(),
+             onClick = if (t.installed) ({ onOpenTool(t.schema.id) }) else null) {
+        Column(modifier = Modifier.padding(Sp.m), verticalArrangement = Arrangement.spacedBy(Sp.xs)) {
             Text(t.schema.name, fontWeight = FontWeight.Bold,
                  style = MaterialTheme.typography.bodyLarge)
             Text(t.schema.description, style = MaterialTheme.typography.bodySmall)
@@ -230,7 +225,7 @@ private fun ToolCard(t: ToolStatus, onOpenTool: (String) -> Unit, onInstall: () 
                          style = MaterialTheme.typography.bodySmall,
                          fontWeight = FontWeight.Medium)
                     Spacer(Modifier.weight(1f))
-                    OutlinedButton(onClick = onInstall) { Text("install") }
+                    TrmxButton(label = "install", onClick = onInstall)
                 }
             }
         }

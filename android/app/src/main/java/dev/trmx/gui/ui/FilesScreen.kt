@@ -25,14 +25,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -53,6 +50,7 @@ import dev.trmx.gui.FileBrowserState
 import dev.trmx.gui.files.FilesFilter
 import dev.trmx.gui.model.FileEntry
 import dev.trmx.gui.tools.JobLabels
+import dev.trmx.gui.ui.Tokens.Palette as P
 
 private val TYPE_GLYPH = mapOf(
     "dir" to "📁", "file" to "📄", "symlink" to "🔗", "other" to "•")
@@ -106,7 +104,8 @@ fun FilesScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (pickFile != null) {
-                OutlinedButton(onClick = onCancelPick) { Text("← cancel") }
+                TrmxButton(label = "← cancel", onClick = onCancelPick,
+                           kind = TrmxButtonKind.Secondary)
                 Spacer(Modifier.width(Sp.s))
             }
             Text(
@@ -120,24 +119,25 @@ fun FilesScreen(
             if (state.opPending) CircularProgressIndicator(strokeWidth = 3.dp)
         }
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        TrmxCard(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(Sp.m), verticalArrangement = Arrangement.spacedBy(Sp.s)) {
                 Text(state.path, fontFamily = FontFamily.Monospace,
                      style = MaterialTheme.typography.bodyLarge)
                 if (pickFile == null) {
                     ActionFlowRow {
-                        OutlinedButton(onClick = onUp, enabled = state.path != "~") { Text("↑ up") }
-                        OutlinedButton(onClick = onRefresh) { Text("refresh") }
-                        Button(onClick = { newDirDialog = true }) { Text("+ folder") }
-                        Button(onClick = {
-                            picker.launch(arrayOf("*/*"))
-                        }) { Text("↑ upload") }
-                        OutlinedButton(onClick = { showHidden = !showHidden }) {
-                            Text(if (showHidden) "● dotfiles" else "◌ dotfiles")
-                        }
+                        TrmxButton(label = "↑", onClick = onUp,
+                                   kind = TrmxButtonKind.Secondary,
+                                   enabled = state.path != "~")
+                        TrmxButton(label = "⟳", onClick = onRefresh,
+                                   kind = TrmxButtonKind.Secondary)
+                        TrmxButton(label = "New folder", onClick = { newDirDialog = true })
+                        TrmxButton(label = "Upload", onClick = { picker.launch(arrayOf("*/*")) })
+                        TrmxButton(label = if (showHidden) "● dotfiles" else "◌ dotfiles",
+                                   onClick = { showHidden = !showHidden },
+                                   kind = TrmxButtonKind.Secondary)
                     }
                 } else if (pickFile == false) {
-                    Button(onClick = { onPicked(state.path) }) { Text("use this folder ✓") }
+                    TrmxButton(label = "use this folder ✓", onClick = { onPicked(state.path) })
                 }
                 Text(
                     when (pickFile) {
@@ -159,9 +159,9 @@ fun FilesScreen(
         }
 
         state.transfer?.let { t ->
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp),
-                       verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            TrmxCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(Sp.m),
+                       verticalArrangement = Arrangement.spacedBy(Sp.s)) {
                     Text("${t.label} ${t.name}…", style = MaterialTheme.typography.bodyMedium)
                     val total = t.total
                     if (total != null && total > 0) {
@@ -190,11 +190,12 @@ fun FilesScreen(
                 CircularProgressIndicator(strokeWidth = 3.dp)
                 Text("loading…")
             }
-            state.entries.isEmpty() && state.error != null -> Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(14.dp),
-                       verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            state.entries.isEmpty() && state.error != null -> TrmxCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(Sp.m),
+                       verticalArrangement = Arrangement.spacedBy(Sp.s)) {
                     Text(state.error, color = MaterialTheme.colorScheme.error)
-                    OutlinedButton(onClick = onRefresh) { Text("retry") }
+                    TrmxButton(label = "retry", onClick = onRefresh,
+                               kind = TrmxButtonKind.Secondary)
                 }
             }
             state.entries.isEmpty() -> Box(modifier = Modifier.fillMaxSize(),
@@ -208,7 +209,8 @@ fun FilesScreen(
                     Text(
                         "${state.entries.size} hidden ${if (state.entries.size == 1) "entry" else "entries"}",
                         color = MaterialTheme.colorScheme.secondary)
-                    OutlinedButton(onClick = { showHidden = true }) { Text("show dotfiles") }
+                    TrmxButton(label = "show dotfiles", onClick = { showHidden = true },
+                               kind = TrmxButtonKind.Secondary)
                 }
             }
             else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -233,7 +235,8 @@ fun FilesScreen(
                             .padding(vertical = 8.dp),
                     ) {
                         Text(TYPE_GLYPH[entry.type] ?: "•",
-                             modifier = Modifier.width(34.dp), fontSize = 18.sp)
+                             modifier = Modifier.width(34.dp), fontSize = 18.sp,
+                             color = P.TextSecondary)
                         Column(modifier = Modifier.weight(1f)) {
                             Text(entry.name, style = MaterialTheme.typography.bodyLarge)
                             // Human metadata only (P2): "Aug 28 · 3.5 KB".
@@ -243,10 +246,10 @@ fun FilesScreen(
                                 "${JobLabels.relativeTime(entry.mtime) ?: "—"}  ·  " +
                                     Formatter.formatShortFileSize(context, entry.size),
                                 fontFamily = FontFamily.Monospace, fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.secondary,
+                                color = P.TextMuted,
                             )
                         }
-                        Text("⋮", color = MaterialTheme.colorScheme.secondary)
+                        Text("⋮", color = P.TextMuted)
                     }
                 }
             }
@@ -259,9 +262,8 @@ fun FilesScreen(
             onDismissRequest = { newDirDialog = false },
             title = { Text("New folder") },
             text = {
-                OutlinedTextField(value = name, onValueChange = { name = it },
-                                  label = { Text("folder name") }, singleLine = true,
-                                  colors = TrmxFieldColors())
+                TrmxTextField(value = name, onValueChange = { name = it },
+                              label = "folder name")
             },
             confirmButton = {
                 TextButton(onClick = {
@@ -315,14 +317,12 @@ fun FilesScreen(
             title = { Text("Rename “${entry.name}”") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = newName, onValueChange = { newName = it },
-                                      label = { Text("new name") }, singleLine = true,
-                                      colors = TrmxFieldColors())
+                    TrmxTextField(value = newName, onValueChange = { newName = it },
+                                  label = "new name")
                     Text("…or remove it entirely:", style = MaterialTheme.typography.bodySmall)
-                    Button(onClick = {
-                        deleteTarget = entry
-                        renameTarget = null
-                    }) { Text("Delete “${entry.name}”") }
+                    TrmxButton(label = "Delete “${entry.name}”",
+                               onClick = { deleteTarget = entry; renameTarget = null },
+                               kind = TrmxButtonKind.Danger)
                 }
             },
             confirmButton = {
@@ -398,15 +398,14 @@ fun FilesScreen(
 
                 if (entry.type != "dir") {
                     ActionFlowRow {
-                        Button(onClick = { onOpenFile(entry); detailsTarget = null }) {
-                            Text("open")
-                        }
-                        OutlinedButton(onClick = { onShareFile(entry); detailsTarget = null }) {
-                            Text("share")
-                        }
-                        OutlinedButton(onClick = { onDownload(entry); detailsTarget = null }) {
-                            Text("save to app")
-                        }
+                        TrmxButton(label = "open",
+                                   onClick = { onOpenFile(entry); detailsTarget = null })
+                        TrmxButton(label = "share",
+                                   onClick = { onShareFile(entry); detailsTarget = null },
+                                   kind = TrmxButtonKind.Secondary)
+                        TrmxButton(label = "save to app",
+                                   onClick = { onDownload(entry); detailsTarget = null },
+                                   kind = TrmxButtonKind.Secondary)
                     }
                 }
             }

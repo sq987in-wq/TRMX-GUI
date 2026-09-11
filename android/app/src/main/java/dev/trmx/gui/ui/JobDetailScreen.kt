@@ -20,16 +20,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,6 +44,7 @@ import dev.trmx.gui.JobDetailState
 import dev.trmx.gui.job.JobOutputState
 import dev.trmx.gui.tools.Artifact
 import dev.trmx.gui.tools.JobLabels
+import dev.trmx.gui.ui.Tokens.Palette as P
 
 private val ACTIVE = setOf("QUEUED", "RUNNING", "CANCELLING")
 
@@ -68,22 +62,10 @@ fun JobDetailScreen(
     var confirmCancel by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Native top app bar (UX-audit P2): human task label as the title,
-        // standard back arrow.
-        TopAppBar(
-            title = {
-                Text(
-                    state.job?.let { JobLabels.taskLabel(it) } ?: "Task",
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            },
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "back")
-                }
-            },
+        // Standard header (P3): human task label as the title.
+        TrmxTopBar(
+            title = state.job?.let { JobLabels.taskLabel(it) } ?: "Task",
+            onBack = onBack,
         )
 
         Column(
@@ -96,15 +78,15 @@ fun JobDetailScreen(
 
         val job = state.job
         state.error?.let {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Text(it, modifier = Modifier.padding(12.dp),
+            TrmxCard(modifier = Modifier.fillMaxWidth()) {
+                Text(it, modifier = Modifier.padding(Sp.m),
                      color = MaterialTheme.colorScheme.error)
             }
         }
 
         if (job != null) {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            TrmxCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(Sp.m), verticalArrangement = Arrangement.spacedBy(Sp.xs)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         // J-ID: secondary, copyable — one tap for bug reports.
                         CopyableId(state.jobId, modifier = Modifier.weight(1f))
@@ -149,12 +131,12 @@ fun JobDetailScreen(
             output?.let { OutputConsole(it, onReplayOutput) }
 
             if (job.status in ACTIVE) {
-                Button(
+                TrmxButton(
+                    label = if (state.cancelling) "Cancelling…" else "Cancel job",
                     onClick = { confirmCancel = true },
+                    kind = TrmxButtonKind.Danger,
                     enabled = !state.cancelling,
-                    modifier = Modifier.fillMaxWidth()) {
-                    Text(if (state.cancelling) "Cancelling…" else "Cancel job")
-                }
+                    modifier = Modifier.fillMaxWidth())
             }
         } else if (state.error == null) {
             Text("loading…")
@@ -207,8 +189,8 @@ private fun ArtifactsCard(
     onOpenArtifact: (Artifact, Boolean) -> Unit,
 ) {
     val context = LocalContext.current
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    TrmxCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(Sp.m), verticalArrangement = Arrangement.spacedBy(Sp.s)) {
             Text("Artifacts", fontWeight = FontWeight.Bold)
             if (state.loading) {
                 Text("collecting outputs…", style = MaterialTheme.typography.bodySmall,
@@ -276,7 +258,7 @@ private fun OutputConsole(
                         output.ended -> "ended"
                         else -> "live"
                     },
-                    color = if (live) Color(0xFF4CAF50) else MaterialTheme.colorScheme.secondary,
+                    color = if (live) TrmxColors.Running else P.TextMuted,
                     style = MaterialTheme.typography.labelSmall)
             }
             if (output.evicted) {
@@ -313,7 +295,7 @@ private fun OutputConsole(
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
                         color = when {
-                            line.isStderr -> Color(0xFFFF8A80)
+                            line.isStderr -> P.Danger
                             line.kind == "status" -> MaterialTheme.colorScheme.secondary
                             else -> Color.Unspecified
                         })

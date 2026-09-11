@@ -17,12 +17,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -73,7 +69,8 @@ fun ChainsScreen(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Chains", fontSize = 24.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = onNew) { Text("+ new chain") }
+            TrmxButton(label = "+ new chain", onClick = onNew,
+                       kind = TrmxButtonKind.Secondary)
         }
 
         state.notice?.let {
@@ -87,7 +84,7 @@ fun ChainsScreen(
 
         // ---- educational empty state (UX-audit P2) ----------------------
         if (state.defs.isEmpty() && state.editing == null && state.run == null) {
-            Card(modifier = Modifier.fillMaxWidth()) {
+            TrmxCard(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(Sp.l),
                     verticalArrangement = Arrangement.spacedBy(Sp.m),
@@ -110,18 +107,17 @@ fun ChainsScreen(
                         Text("→", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         FlowStep("📦", "Archive")
                     }
-                    Button(onClick = onNew, modifier = Modifier.fillMaxWidth()) {
-                        Text("Create your first pipeline")
-                    }
+                    TrmxButton(label = "Create your first pipeline",
+                               onClick = onNew, modifier = Modifier.fillMaxWidth())
                 }
             }
         }
 
         // ---- live run --------------------------------------------------
         state.run?.let { run ->
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp),
-                       verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            TrmxCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(Sp.m),
+                       verticalArrangement = Arrangement.spacedBy(Sp.s)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(run.def.title, fontWeight = FontWeight.Bold,
                              modifier = Modifier.weight(1f))
@@ -176,11 +172,14 @@ fun ChainsScreen(
                     }
                     if (run.status == "PAUSED") {
                         ActionFlowRow {
-                            Button(onClick = onResume) { Text("resume from step ${run.currentStep + 1}") }
-                            OutlinedButton(onClick = onStopRun) { Text("stop") }
+                            TrmxButton(label = "resume from step ${run.currentStep + 1}",
+                                       onClick = onResume)
+                            TrmxButton(label = "stop", onClick = onStopRun,
+                                       kind = TrmxButtonKind.Secondary)
                         }
                     } else if (run.status == "RUNNING") {
-                        OutlinedButton(onClick = onStopRun) { Text("stop orchestrating") }
+                        TrmxButton(label = "stop orchestrating", onClick = onStopRun,
+                                   kind = TrmxButtonKind.Secondary)
                     }
                 }
             }
@@ -188,16 +187,13 @@ fun ChainsScreen(
 
         // ---- builder ---------------------------------------------------
         state.editing?.let { def ->
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp),
-                       verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            TrmxCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(Sp.m),
+                       verticalArrangement = Arrangement.spacedBy(Sp.s)) {
                     Text("Building: ${def.title.ifBlank { "untitled chain" }}",
                          fontWeight = FontWeight.Bold)
-                    OutlinedTextField(
-                        value = def.title,
-                        onValueChange = onSetTitle,
-                        label = { Text("chain title") }, singleLine = true,
-                        colors = TrmxFieldColors())
+                    TrmxTextField(value = def.title, onValueChange = onSetTitle,
+                                  label = "chain title")
                     def.steps.forEachIndexed { i, step ->
                         val schema = schemas[step.toolId]
                         val canChain = ChainPlanner.stepHasOutput(schema ?: return@forEachIndexed)
@@ -217,10 +213,10 @@ fun ChainsScreen(
                                 Text("✕", color = MaterialTheme.colorScheme.error) }
                         }
                     }
-                    OutlinedButton(onClick = { addStepDialog = true }) { Text("+ add step") }
-                    Button(onClick = onSaveDef, modifier = Modifier.fillMaxWidth()) {
-                        Text("save chain")
-                    }
+                    TrmxButton(label = "+ add step", onClick = { addStepDialog = true },
+                               kind = TrmxButtonKind.Secondary)
+                    TrmxButton(label = "save chain", onClick = onSaveDef,
+                               modifier = Modifier.fillMaxWidth())
                 }
             }
         }
@@ -231,8 +227,8 @@ fun ChainsScreen(
         }
         state.defs.forEach { def ->
             if (state.editing?.id == def.id) return@forEach
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            TrmxCard(modifier = Modifier.fillMaxWidth()) {
+                Row(modifier = Modifier.padding(Sp.m), verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(def.title, style = MaterialTheme.typography.bodyLarge)
                         Text("${def.steps.size} steps: " +
@@ -240,7 +236,7 @@ fun ChainsScreen(
                              style = MaterialTheme.typography.bodySmall,
                              color = MaterialTheme.colorScheme.secondary)
                     }
-                    Button(onClick = { onRun(def) }) { Text("▶ run") }
+                    TrmxButton(label = "▶ run", onClick = { onRun(def) })
                     TextButton(onClick = { onEditDef(def.id) }) { Text("✎ edit") }
                     TextButton(onClick = { onDeleteDef(def.id) }) {
                         Text("delete", color = MaterialTheme.colorScheme.error) }

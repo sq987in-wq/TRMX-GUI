@@ -20,15 +20,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -37,9 +33,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,6 +53,7 @@ import dev.trmx.gui.model.ToolArg
 import dev.trmx.gui.model.ToolExample
 import dev.trmx.gui.tools.FieldValue
 import dev.trmx.gui.tools.FormEngine
+import dev.trmx.gui.ui.Tokens.Palette as P
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,24 +74,12 @@ fun ToolFormScreen(
     val preview = FormEngine.previewArgv(schema, state.values)
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Native top app bar (UX-audit P2): standard back arrow, tool name
-        // as the title — no more web-style "← Toolbox" pill.
-        TopAppBar(
-            title = {
-                Column {
-                    Text(schema.name, fontWeight = FontWeight.Bold)
-                    if (state.stepIndex != null) {
-                        Text("editing chain step ${state.stepIndex + 1}",
-                             style = MaterialTheme.typography.bodySmall,
-                             color = MaterialTheme.colorScheme.tertiary)
-                    }
-                }
-            },
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "back")
-                }
-            },
+        // Standard header (P3): TrmxTopBar — back arrow + tool name.
+        TrmxTopBar(
+            title = schema.name,
+            onBack = onBack,
+            subtitle = if (state.stepIndex != null)
+                "editing chain step ${state.stepIndex + 1}" else null,
         )
 
         Column(
@@ -117,10 +99,11 @@ fun ToolFormScreen(
                  color = MaterialTheme.colorScheme.error)
         }
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(Sp.s + Sp.xs)) {
+        TrmxCard(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(Sp.m)) {
                 schema.description.let {
-                    if (it.isNotBlank()) Text(it, style = MaterialTheme.typography.bodyMedium)
+                    if (it.isNotBlank()) Text(it, style = MaterialTheme.typography.bodyMedium,
+                                              color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -140,8 +123,8 @@ fun ToolFormScreen(
             }
         }
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(Sp.s + Sp.xs)) {
+        TrmxCard(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(Sp.m)) {
                 Text("will run on the phone:", style = MaterialTheme.typography.bodySmall,
                      color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(preview.joinToString(" ") { shellWord(it) },
@@ -158,29 +141,29 @@ fun ToolFormScreen(
         ActionFlowRow {
             // Always enabled: a premature tap marks every field touched and
             // surfaces its validation error (Ph 9.5) instead of a dead button.
-            Button(
+            TrmxButton(
+                label = if (schema.risk_tier == "safe") "RUN ▶" else "RUN ▶ (confirm)",
                 onClick = { if (schema.risk_tier == "safe") onSubmit() else confirmRun = true },
                 enabled = !state.submitting && state.stepIndex == null,
-            ) {
-                if (state.submitting) {
-                    CircularProgressIndicator(
-                        strokeWidth = 2.dp,
-                        modifier = Modifier.size(14.dp),
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
-                    Spacer(Modifier.width(Sp.xs))
-                }
-                Text(if (schema.risk_tier == "safe") "RUN ▶" else "RUN ▶ (confirm)")
-            }
+                leading = if (state.submitting) {
+                    {
+                        CircularProgressIndicator(
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(14.dp),
+                            color = P.OnAccent,
+                        )
+                    }
+                } else null,
+            )
             if (state.stepIndex == null) {
-                OutlinedButton(onClick = { saveRecipe = true },
-                               enabled = submittable && !state.submitting) {
-                    Text("☆ save recipe")
-                }
+                TrmxButton(label = "☆ save recipe",
+                           onClick = { saveRecipe = true },
+                           kind = TrmxButtonKind.Secondary,
+                           enabled = submittable && !state.submitting)
             } else {
-                Button(onClick = onSubmit, enabled = submittable && !state.submitting) {
-                    Text("save to step ✓")
-                }
+                TrmxButton(label = "save to step ✓",
+                           onClick = onSubmit,
+                           enabled = submittable && !state.submitting)
             }
         }
         }
@@ -209,9 +192,8 @@ fun ToolFormScreen(
             onDismissRequest = { saveRecipe = false },
             title = { Text("Save recipe") },
             text = {
-                OutlinedTextField(value = title, onValueChange = { title = it },
-                                  label = { Text("recipe name") }, singleLine = true,
-                                  shape = FieldShape, colors = TrmxFieldColors())
+                TrmxTextField(value = title, onValueChange = { title = it },
+                              label = "recipe name")
             },
             confirmButton = {
                 TextButton(onClick = {
@@ -293,13 +275,11 @@ private fun Field(
                          style = MaterialTheme.typography.bodyMedium)
                 }
             }
-            else -> OutlinedTextField(
+            else -> TrmxTextField(
                 value = if (a.type == "bool") "" else v.text,
                 onValueChange = { if (a.type != "bool") onEdit(a.name, v.copy(text = it)) },
+                label = a.label.ifEmpty { a.name },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = FieldShape,
-                colors = TrmxFieldColors(),
                 isError = err != null,
                 supportingText = {
                     when {
