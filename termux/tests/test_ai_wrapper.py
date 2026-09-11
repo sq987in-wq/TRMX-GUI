@@ -5,8 +5,13 @@ The wrapper's contract (ADR-014): description -> LLM CLI -> UNTRUSTED
 output -> strict §7.2 validation (mirroring the bridge) -> ~/.trmx/tools/
 ai-<id>.json, never overwriting, risk_tier pinned to "confirm".
 
+Covers BOTH backends (v0.2.0): cli mode (fake CLI on PATH) and http_api
+mode (fake OpenAI/Gemini-shaped API on a local HTTP server) — plus the
+first-run config template and the legacy flat config form.
+
 Run:  python3 termux/tests/test_ai_wrapper.py   (or tests/run_tests.sh)
-stdlib only — the "LLM" is a shell script that cats a fixed payload.
+stdlib only — the "LLM" is a shell script or a local HTTP server; no
+network.
 """
 
 from __future__ import annotations
@@ -18,7 +23,9 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
@@ -56,12 +63,17 @@ def make_backend(out: str, exit_code: int = 0) -> Path:
 
 
 class FakeHome:
-    """Temp TRMX_HOME with ai.json pointing at a fake backend."""
+    """Temp TRMX_HOME. backend: fake CLI (legacy flat cli config);
+    config: full ai.json dict (any mode); neither: no config at all."""
 
-    def __init__(self, backend: Path):
+    def __init__(self, backend: Path | None = None, config: dict | None = None):
         self.dir = Path(tempfile.mkdtemp(prefix="trmx-ai-home-"))
-        (self.dir / "ai.json").write_text(
-            json.dumps({"command": [str(backend)], "timeout_s": 30}))
+        if config is not None:
+            (self.dir / "ai.json").write_text(json.dumps(config))
+        elif backend is not None:
+            (self.dir / "ai.json").write_text(
+                json.dumps({"command": [str(backend)], "timeout_s": 30}))
+        # else: first-run path (template bootstrap)
 
     def run(self, *args: str) -> subprocess.CompletedProcess:
         env = dict(os.environ, TRMX_HOME=str(self.dir))
@@ -229,6 +241,211 @@ class TestTrmxAi(unittest.TestCase):
             self.assertIn("video-grab", sent)          # prompt embedded
         finally:
             os.environ["PATH"] = os.environ["PATH"].split(":", 1)[1]
+
+
+class FakeApi:
+    """Local HTTP endpoint impersonating an OpenAI- or Gemini-shaped API."""
+
+    def __init__(self, response: dict, status: int = 200):
+        outer = self
+
+        class H(BaseHTTPRequestHandler):
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", 0))
+                body = json.loads(self.rfile.read(length) or b"{}")
+                outer.last = {
+                    "path": self.path,
+                    "auth": self.headers.get("Authorization"),
+                    "goog": self.headers.get("x-goog-api-key"),
+                    "body": body,
+                }
+                payload = json.dumps(outer.response).encode()
+                self.send_response(outer.status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def log_message(self, *a):
+                pass
+
+        self.last = {}
+        self.response = response
+        self.status = status
+        self.server = HTTPServer(("127.0.0.1", 0), H)
+        self.port = self.server.server_port
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    @property
+    def url(self) -> str:
+        return f"http://127.0.0.1:{self.port}/v1/chat/completions"
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def openai_response(schema: dict) -> dict:
+    return {"choices": [{"message": {"content": json.dumps(schema)}}]}
+
+
+def gemini_response(schema: dict) -> dict:
+    return {"candidates": [{"content": {"parts": [{"text": json.dumps(schema)}]}}]}
+
+
+class TestHttpApi(unittest.TestCase):
+    """http_api mode against a local server: both provider wire shapes,
+    key handling, error paths — and the SAME untrusted-output rules."""
+
+    def setUp(self):
+        self._homes: list[FakeHome] = []
+        self._apis: list[FakeApi] = []
+
+    def tearDown(self):
+        for h in self._homes:
+            h.cleanup()
+        for a in self._apis:
+            a.close()
+
+    def api(self, response: dict, status: int = 200) -> FakeApi:
+        a = FakeApi(response, status)
+        self._apis.append(a)
+        return a
+
+    def home(self, config: dict) -> FakeHome:
+        h = FakeHome(config=config)
+        self._homes.append(h)
+        return h
+
+    def cfg(self, api_url: str, provider: str = "openai_compatible",
+            **overrides) -> dict:
+        block = {"provider": provider, "endpoint": api_url,
+                 "api_key": "test-key", "model": "m1", "timeout_s": 30}
+        block.update(overrides)
+        return {"mode": "http_api", "http_api": block}
+
+    def test_20_openai_shape_happy_path(self):
+        api = self.api(openai_response(GOOD_SCHEMA))
+        h = self.home(self.cfg(api.url))
+        r = h.run("download a video with video-grab")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        written = json.loads((h.dir / "tools" / "ai-video-grab.json").read_text())
+        self.assertEqual(written["risk_tier"], "confirm")   # safety pin
+        # wire shape: bearer auth, prompt embedded, model sent
+        self.assertEqual(api.last["auth"], "Bearer test-key")
+        self.assertIn("video-grab", api.last["body"]["messages"][0]["content"])
+        self.assertEqual(api.last["body"]["model"], "m1")
+
+    def test_21_gemini_shape_and_env_key(self):
+        api = self.api(gemini_response(GOOD_SCHEMA))
+        h = self.home(self.cfg(api.url, provider="gemini",
+                               api_key="", api_key_env="TRMX_TEST_AI_KEY"))
+        os.environ["TRMX_TEST_AI_KEY"] = "env-secret"
+        try:
+            r = h.run("download a video with video-grab")
+        finally:
+            del os.environ["TRMX_TEST_AI_KEY"]
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(api.last["goog"], "env-secret")
+        self.assertNotIn("env-secret", r.stderr + r.stdout)  # never echoed
+        self.assertTrue((h.dir / "tools" / "ai-video-grab.json").is_file())
+
+    def test_22_model_override_reaches_body(self):
+        api = self.api(openai_response(GOOD_SCHEMA))
+        h = self.home(self.cfg(api.url))
+        r = h.run("--model", "big-model", "download a video with video-grab")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(api.last["body"]["model"], "big-model")
+
+    def test_23_http_error_is_loud(self):
+        api = self.api({"error": {"message": "rate limited"}}, status=429)
+        h = self.home(self.cfg(api.url))
+        r = h.run("download a video with video-grab")
+        self.assertEqual(r.returncode, 3, r.stderr)
+        self.assertIn("HTTP 429", r.stderr)
+        self.assertNotIn("test-key", r.stderr)               # key never echoed
+
+    def test_24_unexpected_shape_rejected(self):
+        api = self.api({"unexpected": True})
+        h = self.home(self.cfg(api.url))
+        r = h.run("download a video with video-grab")
+        self.assertEqual(r.returncode, 3, r.stderr)
+        self.assertIn("shape", r.stderr)
+
+    def test_25_bad_schema_via_http_still_rejected(self):
+        bad = json.loads(json.dumps(GOOD_SCHEMA))
+        bad["binary"] = "/bin/sh"                            # path traversal try
+        api = self.api(openai_response(bad))
+        h = self.home(self.cfg(api.url))
+        r = h.run("download a video with video-grab")
+        self.assertEqual(r.returncode, 4, r.stderr)
+        self.assertFalse((h.dir / "tools").exists())
+
+    def test_26_missing_key_rejected(self):
+        api = self.api(openai_response(GOOD_SCHEMA))
+        os.environ.pop("GROQ_API_KEY", None)
+        h = self.home(self.cfg(api.url, provider="groq", api_key="",
+                               api_key_env=""))
+        r = h.run("download a video with video-grab")
+        self.assertEqual(r.returncode, 3, r.stderr)
+        self.assertIn("API key", r.stderr)
+
+    def test_27_bad_provider_rejected(self):
+        api = self.api(openai_response(GOOD_SCHEMA))
+        h = self.home(self.cfg(api.url, provider="gemni"))   # typo
+        r = h.run("download a video with video-grab")
+        self.assertEqual(r.returncode, 3, r.stderr)
+        self.assertIn("openai_compatible", r.stderr)         # valid list shown
+
+    def test_28_openai_compatible_needs_endpoint(self):
+        h = self.home({"mode": "http_api", "http_api": {
+            "provider": "openai_compatible", "api_key": "k", "model": "m"}})
+        r = h.run("download a video with video-grab")
+        self.assertEqual(r.returncode, 3, r.stderr)
+        self.assertIn("endpoint", r.stderr)
+
+    def test_29_bad_mode_rejected(self):
+        h = self.home({"mode": "carrier-pigeon"})
+        r = h.run("download a video with video-grab")
+        self.assertEqual(r.returncode, 3, r.stderr)
+        self.assertIn("mode", r.stderr)
+
+    def test_30_legacy_flat_config_still_cli(self):
+        # the v0.1.0 flat form keeps working (no "mode" key -> cli)
+        backend = make_backend(json.dumps(GOOD_SCHEMA))
+        h = FakeHome(backend)
+        self._homes.append(h)
+        r = h.run("download a video with video-grab")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue((h.dir / "tools" / "ai-video-grab.json").is_file())
+
+
+class TestConfigTemplate(unittest.TestCase):
+
+    def test_40_template_written_on_first_run(self):
+        h = FakeHome()                       # no ai.json, no backend
+        try:
+            r = h.run("download a video with video-grab")
+            # default template is cli mode -> ollama missing -> loud 3
+            self.assertEqual(r.returncode, 3, r.stderr)
+            self.assertIn("template", r.stderr)
+            path = h.dir / "ai.json"
+            self.assertTrue(path.is_file())
+            cfg = json.loads(path.read_text())
+            self.assertEqual(cfg["mode"], "cli")
+            self.assertIn("http_api", cfg)   # one flip away from cloud
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        finally:
+            h.cleanup()
+
+    def test_41_dry_run_writes_no_template(self):
+        h = FakeHome()
+        try:
+            r = h.run("--dry-run", "download a video with video-grab")
+            self.assertEqual(r.returncode, 3, r.stderr)
+            self.assertFalse((h.dir / "ai.json").exists())
+        finally:
+            h.cleanup()
 
 
 if __name__ == "__main__":

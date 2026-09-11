@@ -6,6 +6,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Added — trmx-ai 0.2.0: dual LLM backend (offline cli + cloud http_api)
+- `~/.trmx/ai.json` config v2: `"mode": "cli" | "http_api"` with clean
+  per-mode blocks; the v0.1.0 flat form still loads (implicit cli).
+- `http_api` mode: `provider` (openai | groq | gemini |
+  openai_compatible) + `endpoint`/`model`/`api_key`/`api_key_env`/
+  `timeout_s`. Provider presets for both wire shapes (OpenAI chat and
+  Gemini contents/parts); keys from config or the conventional env var;
+  keys never logged or echoed; stdlib `urllib` only (ADR-002) — cloud
+  schemas without multi-GB models on mobile storage.
+- First run without a config writes a documented template to
+  `~/.trmx/ai.json` (mode cli, 0600) — one flip to cloud.
+- Untrusted-output validation and safety rules (§7.2 mirror, 64 KB cap,
+  confirm-tier pin, no overwrite) apply IDENTICALLY to both backends —
+  pinned by tests that feed the same bad schema through each.
+- Docs: `docs/AI-CONFIG.md` (annotated examples for both modes, provider
+  table, key handling, troubleshooting). Tests: 30 (12 http_api against
+  local HTTP fakes, 2 template bootstrap).
+
 ### Added — AI round: Schema Builder + `trmx-ai` wrapper (2026-09-11, ADR-014)
 - **`termux/trmx-ai`** (new): describe a tool in plain words → configured
   LLM CLI (`~/.trmx/ai.json`, default `ollama run llama3.2`) → strict

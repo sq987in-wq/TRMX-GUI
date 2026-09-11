@@ -479,3 +479,36 @@ APK from this round's CI run (check the run page for the artifact).
 - [ ] Bridge still loopback-only; token auth unchanged.
 - [ ] Existing tools submit exactly as before (argv preview identical).
 - [ ] JVM + python suites green in CI (run for this commit).
+
+---
+
+## Round 6 — trmx-ai dual backend (2026-09-11)
+
+Update the backend first so the phone runs trmx-ai 0.2.0
+(Diagnostics → reinstall / installer; `~/.trmx/bin/trmx-ai --version`).
+
+### Config template + offline mode (regression)
+- [ ] Delete `~/.trmx/ai.json`, run any AI build → the file is recreated
+      as a documented template (mode cli) with 0600 permissions; the
+      notice points at docs/AI-CONFIG.md.
+- [ ] cli mode (ollama) still works end-to-end as in round 5.
+
+### Cloud mode (http_api)
+- [ ] Edit `~/.trmx/ai.json`: set `"mode": "http_api"` and fill provider
+      + model (+ `api_key` or export the provider's key variable).
+      Cheapest try: a Groq free-tier key, or a Gemini key from AI Studio.
+- [ ] Toolbox → AI Schema Builder → describe a tool → Generate → job
+      completes, "schema installed — toolbox rescanned", the new tool
+      appears (confirm tier).
+- [ ] Turn off Wi-Fi/data → Generate → loud, clear network error in the
+      job output (exit 3), no file written.
+- [ ] Remove the key (and unset the env var) → Generate → loud "no API
+      key" error naming the config field; the key never appears anywhere
+      in job output or errors.
+- [ ] Bad provider typo ("gemni") → error lists the valid providers.
+- [ ] Same protections as round 5: garbage description → exit 4 rejected
+      output; duplicate generation → refused overwrite (exit 5).
+
+### Switching
+- [ ] Flip `mode` back to `cli` → offline builds work again without any
+      other change.

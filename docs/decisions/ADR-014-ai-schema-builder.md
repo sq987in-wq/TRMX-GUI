@@ -76,3 +76,31 @@ on-device report: `~/downloads` not existing broke first runs.
   deleted, or hand-edited like any JSON in `~/.trmx/tools/`.
 - Future AI rounds (recipe synthesis, chain drafting) reuse the same
   wrapper pattern: untrusted output → strict validation → file → rescan.
+
+---
+
+## Addendum — dual backend: cli + http_api (trmx-ai 0.2.0)
+
+On-device feedback: local-only backends force a choice between gigabytes
+of model weights on phone storage and no AI round at all. v0.2.0 adds
+`"mode": "http_api"` alongside `"cli"`:
+
+- **Config v2** (`~/.trmx/ai.json`): `mode` + `cli`/`http_api` blocks;
+  the v0.1.0 flat form still loads (implicit cli). First run without a
+  config writes a documented template (mode cli, 0600) — one flip to
+  cloud. Guide: `docs/AI-CONFIG.md`.
+- **http_api**: `provider` ∈ openai | groq | gemini | openai_compatible
+  (+ `endpoint`, `model`, `api_key`/`api_key_env`, `timeout_s`). Provider
+  presets cover both wire shapes (OpenAI chat vs Gemini contents/parts);
+  keys resolve from config or the conventional env var and are never
+  logged or echoed (URL query keys redacted).
+- **stdlib only** (ADR-002): cloud calls use `urllib.request`, not
+  `requests`/`curl` — no new dependencies, works on a bare Termux.
+- **The trust boundary did not move**: both backends funnel into the
+  same `extract_json` → `validate_schema` path (64 KB cap, §7.2 rules,
+  confirm-tier pin, no overwrite). Tests pin this: the same malicious
+  schema is rejected identically via cli and via http_api.
+- Tests: 30 in `test_ai_wrapper.py` — 17 cli (fake CLIs), 12 http_api
+  (local `HTTPServer` fakes, both shapes, key handling, HTTP errors),
+  2 template bootstrap (written 0600 on first run; `--dry-run` writes
+  nothing).

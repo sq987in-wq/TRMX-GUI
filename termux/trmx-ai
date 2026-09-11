@@ -3,27 +3,43 @@
 
     trmx-ai "<plain-words description of a command-line tool>"
 
-Pipeline: description -> prompt -> configured LLM CLI -> UNTRUSTED output
--> strict validation (§7.2 rules, mirrored from the bridge) -> schema file
-in ~/.trmx/tools/ai-<id>.json. The bridge's /v1/tools/refresh picks it up;
-no bridge restart needed.
+Pipeline: description -> prompt -> configured LLM backend -> UNTRUSTED
+output -> strict validation (§7.2 rules, mirrored from the bridge) ->
+schema file in ~/.trmx/tools/ai-<id>.json. The bridge's
+/v1/tools/refresh picks it up; no bridge restart needed.
 
-Trust model (ADR-014):
-  - LLM output is UNTRUSTED: never eval'd, only parsed as data; the schema
-    is validated with the same structural rules the bridge enforces, plus
-    size caps; on any doubt the wrapper fails loud (exit 4) and writes
-    nothing.
+DUAL backends (~/.trmx/ai.json, see docs/AI-CONFIG.md):
+
+  1. OFFLINE / LOCAL ("mode": "cli") — any CLI-wrapped model runner:
+         {"mode": "cli",
+          "cli": {"command": ["ollama", "run", "llama3.2"], "timeout_s": 180}}
+     The prompt is appended to `command` as a single argv element (no
+     shell). Legacy flat form ({"command": [...]}) still loads.
+
+  2. CLOUD API ("mode": "http_api") — lightweight HTTP calls, no
+     multi-GB models on mobile storage:
+         {"mode": "http_api",
+          "http_api": {"provider": "groq", "model": "llama-3.3-70b-versatile",
+                       "api_key": "…", "timeout_s": 120}}
+     provider ∈ openai | groq | gemini | openai_compatible (endpoint
+     required for the last). `endpoint` overrides the provider default;
+     `api_key` or `api_key_env` (environment variable name — the
+     provider's conventional <PROVIDER>_API_KEY is tried too). Calls use
+     Python stdlib urllib only (ADR-002); keys are never logged or
+     echoed. When ai.json is absent a documented template is written
+     (mode cli) — edit it to switch.
+
+Trust model (ADR-014) — identical for BOTH backends:
+  - LLM output is UNTRUSTED: never eval'd, only parsed as data; the
+    schema is validated with the same structural rules the bridge
+    enforces, plus size caps; on any doubt the wrapper fails loud and
+    writes nothing.
   - AI-generated tools are pinned to risk_tier "confirm" — a human must
     edit the JSON by hand to relax it.
   - The wrapper writes ONLY inside ~/.trmx/tools/ and never overwrites.
 
-Backend config: ~/.trmx/ai.json
-    { "command": ["ollama", "run", "llama3.2"], "timeout_s": 180 }
-  The prompt is appended to `command` as a single argv element (no shell).
-  Default when the file is absent: ["ollama", "run", "llama3.2"].
-
-Exit codes: 0 ok · 2 usage · 3 backend/config problem · 4 LLM output
-invalid · 5 refused overwrite.
+Exit codes: 0 ok · 2 usage · 3 backend/config/network problem (incl.
+HTTP errors) · 4 LLM output invalid · 5 refused overwrite.
 
 Env: TRMX_HOME (default ~/.trmx) — for tests.
 """
@@ -34,15 +50,57 @@ import argparse
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 from pathlib import Path
 
-TRMX_AI_VERSION = "0.1.0"
+TRMX_AI_VERSION = "0.2.0"
 DEFAULT_COMMAND = ["ollama", "run", "llama3.2"]
 DEFAULT_TIMEOUT_S = 180
-MAX_LLM_BYTES = 65536          # cap on model output we are willing to parse
+DEFAULT_HTTP_TIMEOUT_S = 120
+MAX_LLM_BYTES = 65536          # cap on model text we are willing to parse
+MAX_HTTP_BYTES = 1024 * 1024   # cap on HTTP response body
+
+VALID_PROVIDERS = ("openai", "groq", "gemini", "openai_compatible")
+PROVIDER_ENDPOINTS = {
+    "openai": "https://api.openai.com/v1/chat/completions",
+    "groq": "https://api.groq.com/openai/v1/chat/completions",
+    # gemini's endpoint embeds the model — constructed at resolve time
+    "gemini": "https://generativelanguage.googleapis.com/v1beta/models",
+}
+DEFAULT_KEY_ENV = {
+    "openai": "OPENAI_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    # openai_compatible: no convention — set api_key or api_key_env
+}
+
+# Written to ~/.trmx/ai.json on first run (mode cli) so users have a
+# documented, one-flip-ready config to edit. Annotated in docs/AI-CONFIG.md.
+CONFIG_TEMPLATE = {
+    "_help": [
+        "TRMX AI backend configuration (trmx-ai). Full guide: docs/AI-CONFIG.md",
+        "mode: 'cli' = offline/local model runner | 'http_api' = cloud API.",
+        "Unknown keys are ignored. Keep this file private (chmod 600).",
+    ],
+    "mode": "cli",
+    "cli": {
+        "command": ["ollama", "run", "llama3.2"],
+        "timeout_s": 180,
+    },
+    "http_api": {
+        "provider": "groq",
+        "endpoint": "",
+        "api_key": "",
+        "api_key_env": "GROQ_API_KEY",
+        "model": "llama-3.3-70b-versatile",
+        "timeout_s": 120,
+    },
+}
 
 ARG_TYPES = ("string", "int", "float", "bool", "enum", "path", "url")
 
@@ -58,34 +116,206 @@ def home_dir() -> Path:
     return Path(os.environ.get("TRMX_HOME", str(Path.home() / ".trmx")))
 
 
-def load_backend(model: str | None) -> tuple[list[str], int]:
-    """Read ~/.trmx/ai.json; fall back to the default ollama command."""
-    cfg_path = home_dir() / "ai.json"
-    command = list(DEFAULT_COMMAND)
-    timeout = DEFAULT_TIMEOUT_S
-    if cfg_path.is_file():
+def redact_url(url: str) -> str:
+    """Never echo key material that may be embedded in a URL."""
+    return re.sub(r"([?&](?:key|api_key|token)=)[^&]+", r"\1***", url)
+
+
+def write_template_file(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent,
+                                      prefix=".ai.json-", delete=False)
+    try:
+        tmp.write(json.dumps(CONFIG_TEMPLATE, indent=2, ensure_ascii=False) + "\n")
+        tmp.close()
+        os.replace(tmp.name, path)
+        os.chmod(path, 0o600)          # it may hold an API key later
+    except BaseException:
         try:
-            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-        except Exception as e:  # noqa: BLE001
-            die(3, f"{cfg_path}: not valid JSON: {e}")
-        if not isinstance(cfg, dict):
-            die(3, f"{cfg_path}: must be a JSON object")
-        cmd = cfg.get("command", command)
-        if not isinstance(cmd, list) or not cmd or \
-                not all(isinstance(x, str) for x in cmd):
-            die(3, f"{cfg_path}: 'command' must be a non-empty list of strings")
-        command = list(cmd)
-        t = cfg.get("timeout_s", timeout)
-        if not isinstance(t, (int, float)) or t <= 0:
-            die(3, f"{cfg_path}: 'timeout_s' must be a positive number")
-        timeout = int(t)
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+        raise
+    print(f"trmx-ai: wrote default config template to {path} — edit it to "
+          "switch to a cloud backend (docs/AI-CONFIG.md)", file=sys.stderr)
+
+
+def load_config(write_template: bool) -> dict:
+    """Read ~/.trmx/ai.json; on first run write the template. Returns {} if
+    the file does not exist (and no template was requested)."""
+    path = home_dir() / "ai.json"
+    if not path.is_file():
+        if write_template:
+            write_template_file(path)
+        return {}
+    try:
+        cfg = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001
+        die(3, f"{path}: not valid JSON: {e}")
+    if not isinstance(cfg, dict):
+        die(3, f"{path}: must be a JSON object")
+    return cfg
+
+
+# -------------------------------------------------- backend resolution
+
+def _pos_timeout(value, default: int, what: str) -> int:
+    if value is None:
+        return default
+    if not isinstance(value, (int, float)) or value <= 0:
+        die(3, f"ai.json: {what} must be a positive number")
+    return int(value)
+
+
+def resolve_cli(cfg: dict, model: str | None) -> tuple[list[str], int]:
+    """cli mode: structured 'cli' block, legacy flat keys, or defaults."""
+    block = cfg.get("cli") if isinstance(cfg.get("cli"), dict) else {}
+    if not isinstance(block, dict):
+        die(3, "ai.json: 'cli' must be a JSON object")
+    command = block.get("command") or cfg.get("command") or list(DEFAULT_COMMAND)
+    if not isinstance(command, list) or not command or \
+            not all(isinstance(x, str) for x in command):
+        die(3, "ai.json: cli 'command' must be a non-empty list of strings")
+    command = list(command)
+    timeout = _pos_timeout(block.get("timeout_s", cfg.get("timeout_s")),
+                           DEFAULT_TIMEOUT_S, "cli timeout_s")
     if model:                     # --model overrides the configured model
-        if len(command) >= 2 and command[0] == "ollama":
+        if len(command) >= 3 and command[0] == "ollama":
             command[2] = model
         else:
-            die(3, "--model needs an 'ollama' backend in ~/.trmx/ai.json "
+            die(3, "--model needs an 'ollama' backend in ai.json "
                    "(other backends: set the model inside 'command')")
     return command, timeout
+
+
+def _resolve_api_key(block: dict, provider: str) -> str:
+    key = block.get("api_key")
+    if isinstance(key, str) and key.strip():
+        return key.strip()
+    env_name = block.get("api_key_env") or DEFAULT_KEY_ENV.get(provider, "")
+    if isinstance(env_name, str) and env_name:
+        val = os.environ.get(env_name, "")
+        if val.strip():
+            return val.strip()
+    hint = f" (or export {env_name})" if env_name else ""
+    die(3, f"ai.json: http_api has no API key for provider '{provider}' — "
+           f"set 'api_key' or 'api_key_env'{hint}")
+
+
+def resolve_http(cfg: dict, model: str | None) -> dict:
+    """http_api mode: validate the block, resolve key/endpoint/model."""
+    block = cfg.get("http_api")
+    if not isinstance(block, dict):
+        die(3, "ai.json: mode 'http_api' needs an 'http_api' object")
+    provider = block.get("provider")
+    if provider not in VALID_PROVIDERS:
+        die(3, f"ai.json: http_api.provider must be one of "
+               f"{', '.join(VALID_PROVIDERS)} — got {provider!r}")
+    model = model or block.get("model")
+    if not isinstance(model, str) or not model.strip():
+        die(3, "ai.json: http_api 'model' is required (e.g. "
+               "'llama-3.3-70b-versatile' on groq)")
+    model = model.strip()
+    endpoint = block.get("endpoint")
+    if endpoint is not None and not isinstance(endpoint, str):
+        die(3, "ai.json: http_api 'endpoint' must be a string")
+    if provider == "gemini":
+        url = endpoint or f"{PROVIDER_ENDPOINTS['gemini']}/{model}:generateContent"
+    elif provider == "openai_compatible":
+        if not endpoint:
+            die(3, "ai.json: provider 'openai_compatible' needs an explicit "
+                   "'endpoint' (any OpenAI-shaped /chat/completions URL)")
+        url = endpoint
+    else:
+        url = endpoint or PROVIDER_ENDPOINTS[provider]
+    return {
+        "provider": provider,
+        "url": url,
+        "key": _resolve_api_key(block, provider),
+        "model": model,
+        "timeout": _pos_timeout(block.get("timeout_s"), DEFAULT_HTTP_TIMEOUT_S,
+                                "http_api timeout_s"),
+    }
+
+
+# ------------------------------------------------------ backend execution
+
+def run_cli(command: list[str], prompt: str, timeout: int) -> str:
+    try:
+        proc = subprocess.run(command + [prompt], capture_output=True,
+                              timeout=timeout)
+    except FileNotFoundError:
+        die(3, f"backend '{command[0]}' not found — install it (e.g. "
+               "pkg install ollama) or switch ai.json to http_api mode "
+               "(docs/AI-CONFIG.md)")
+    except subprocess.TimeoutExpired:
+        die(3, f"backend timed out after {timeout}s — try a smaller model "
+               "or raise timeout_s in ~/.trmx/ai.json")
+    if proc.returncode != 0:
+        tail = proc.stderr.decode("utf-8", "replace")[-500:]
+        die(3, f"backend exited {proc.returncode}: {tail.strip()}")
+    return proc.stdout.decode("utf-8", "replace")
+
+
+def _extract_text(payload, provider: str) -> str:
+    """Pull the model's text out of a provider response (as data)."""
+    if provider == "gemini":
+        try:
+            parts = payload["candidates"][0]["content"]["parts"]
+            text = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+        except (KeyError, IndexError, TypeError, AttributeError):
+            die(3, "gemini response shape unexpected — check provider/model/"
+                   "endpoint (candidates[0].content.parts missing)")
+    else:
+        try:
+            text = payload["choices"][0]["message"]["content"]
+            if not isinstance(text, str):
+                raise TypeError("content is not a string")
+        except (KeyError, IndexError, TypeError):
+            die(3, "openai-compatible response shape unexpected — check "
+                   "provider/model/endpoint (choices[0].message.content missing)")
+    return text
+
+
+def call_http(spec: dict, prompt: str) -> str:
+    """POST the prompt; stdlib only; never echoes the key."""
+    if spec["provider"] == "gemini":
+        headers = {"Content-Type": "application/json",
+                   "x-goog-api-key": spec["key"]}
+        body = {"contents": [{"parts": [{"text": prompt}]}]}
+    else:   # openai / groq / openai_compatible share the chat shape
+        headers = {"Content-Type": "application/json",
+                   "Authorization": f"Bearer {spec['key']}"}
+        body = {"model": spec["model"],
+                "messages": [{"role": "user", "content": prompt}]}
+    req = urllib.request.Request(
+        spec["url"], data=json.dumps(body).encode("utf-8"),
+        headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=spec["timeout"]) as r:
+            raw = r.read(MAX_HTTP_BYTES + 1)
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read(2000).decode("utf-8", "replace")
+        except Exception:  # noqa: BLE001
+            detail = ""
+        die(3, f"HTTP {e.code} from {redact_url(spec['url'])}: "
+               f"{detail[:300].strip()}")
+    except urllib.error.URLError as e:
+        reason = getattr(e, "reason", e)
+        die(3, f"cannot reach {redact_url(spec['url'])}: {reason}")
+    except (TimeoutError, socket.timeout):
+        die(3, f"HTTP backend timed out after {spec['timeout']}s — raise "
+               "timeout_s in ~/.trmx/ai.json or try a smaller model")
+    if len(raw) > MAX_HTTP_BYTES:
+        die(3, "HTTP response larger than 1 MiB — refusing")
+    try:
+        payload = json.loads(raw.decode("utf-8", "replace"))
+    except Exception as e:  # noqa: BLE001
+        die(3, f"endpoint returned non-JSON: {e}")
+    if not isinstance(payload, dict):
+        die(3, "endpoint returned a non-object JSON body")
+    return _extract_text(payload, spec["provider"])
 
 
 # ------------------------------------------------- prompt (§7.2 teacher)
@@ -181,7 +411,8 @@ def _cap(v, limit: int, what: str) -> str:
 
 def validate_schema(raw: dict) -> dict:
     """§7.2 structural rules (mirrored from the bridge) + AI-specific caps.
-    Returns a NORMALIZED, safe-to-write schema; raises ValueError loudly."""
+    Returns a NORMALIZED, safe-to-write schema; raises ValueError loudly.
+    Backend-agnostic: the SAME rules apply to cli and http_api output."""
     if not isinstance(raw, dict):
         raise ValueError("schema must be a JSON object")
 
@@ -312,9 +543,10 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(
         prog="trmx-ai",
         description="Turn a plain-words description into a TRMX tool schema "
-                    "via a configured LLM CLI (ADR-014).")
+                    "via a configured LLM backend (cli or http_api; "
+                    "see docs/AI-CONFIG.md).")
     ap.add_argument("description", help="what the tool should do, in plain words")
-    ap.add_argument("--model", help="override the ollama model")
+    ap.add_argument("--model", help="override the configured model")
     ap.add_argument("--dry-run", action="store_true",
                     help="validate and print the schema; write nothing")
     ap.add_argument("--version", action="version",
@@ -325,29 +557,32 @@ def main(argv: list[str]) -> int:
     if len(description) < 8:
         die(2, "description too short — describe the binary and what it should do")
 
-    command, timeout = load_backend(args.model)
+    cfg = load_config(write_template=not args.dry_run)
+    mode = cfg.get("mode")
+    if mode is None:
+        # legacy/implicit: flat {"command": ...} is cli; an http_api block
+        # (with or without "mode") is http_api
+        mode = "http_api" if ("http_api" in cfg or "provider" in cfg) else "cli"
+    if mode not in ("cli", "http_api"):
+        die(3, f"ai.json: 'mode' must be 'cli' or 'http_api' — got {mode!r}")
+
     prompt = PROMPT_TEMPLATE.format(description=description)
 
-    print(f"trmx-ai: calling {command[0]} … (this can take a minute)",
-          file=sys.stderr)
-    try:
-        proc = subprocess.run(command + [prompt], capture_output=True,
-                              timeout=timeout)
-    except FileNotFoundError:
-        die(3, f"backend '{command[0]}' not found — install it (e.g. "
-               "pkg install ollama) or set 'command' in ~/.trmx/ai.json")
-    except subprocess.TimeoutExpired:
-        die(3, f"backend timed out after {timeout}s — try a smaller model "
-               "or raise timeout_s in ~/.trmx/ai.json")
-    if proc.returncode != 0:
-        tail = proc.stderr.decode("utf-8", "replace")[-500:]
-        die(3, f"backend exited {proc.returncode}: {tail.strip()}")
+    if mode == "cli":
+        command, timeout = resolve_cli(cfg, args.model)
+        print(f"trmx-ai: calling {command[0]} … (this can take a minute)",
+              file=sys.stderr)
+        out = run_cli(command, prompt, timeout)
+    else:
+        spec = resolve_http(cfg, args.model)
+        print(f"trmx-ai: calling {spec['provider']} via "
+              f"{redact_url(spec['url'])} …", file=sys.stderr)
+        out = call_http(spec, prompt)
 
-    out = proc.stdout.decode("utf-8", "replace")
     if not out.strip():
         die(4, "model produced no output")
 
-    # ---- untrusted from here on: parse as data, validate, cap ------------
+    # ---- untrusted from here on (both backends): parse, validate, cap ----
     try:
         schema = validate_schema(extract_json(out))
     except ValueError as e:
