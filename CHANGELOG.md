@@ -6,6 +6,33 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Added — Services milestone: protocol 1.1 service registry (2026-09-11, ADR-015)
+- **Bridge v0.5.0 — `~/.trmx/services/*.json` definitions** (id/name/
+  tool/args/autostart) running REGISTRY TOOLS: start submits a normal
+  §7.2-validated tool job and binds it; stop cancels (idempotent);
+  restart waits for terminal then resubmits; status derives from the
+  bound job (state/job_id/last_*). Delete + replace refuse while
+  running (409 SERVICE_RUNNING). Autostart launches after boot
+  reconciliation, best-effort. No second execution path.
+- **New routes** (additive, capability-gated by
+  `features.service_registry`): GET/POST `/v1/services`,
+  GET/DELETE `/v1/services/{id}`,
+  POST `/v1/services/{id}/start|stop|restart|autostart`;
+  new error codes SERVICE_NOT_FOUND/SERVICE_RUNNING; new
+  `service.updated` event (job-driven changes arrive as `job.updated`,
+  correlated via job_id); malformed definitions reported via
+  `features.service_errors`. PROTOCOL.md §14 (fixture index → §15) +
+  two normative fixtures.
+- **App — Services tab** (5th nav item, P4 components only):
+  ServiceCard with vector status dot, Start/Stop/Restart, autostart
+  chip, delete-with-confirm, view-job link; empty state teaches the
+  create path; capability card when the bridge predates v0.5.0.
+  Creation reuses the ToolForm header ("save as service" action) —
+  the current validated args become the service's fixed args.
+- Tests: test_services.py 15 (CRUD, lifecycle, idempotency,
+  autostart-at-boot on a fresh bridge, malformed files);
+  ServicesWireTest 6 (fixture-locked wire shapes).
+
 ### Added — trmx-ai 0.2.0: dual LLM backend (offline cli + cloud http_api)
 - `~/.trmx/ai.json` config v2: `"mode": "cli" | "http_api"` with clean
   per-mode blocks; the v0.1.0 flat form still loads (implicit cli).

@@ -1,0 +1,30 @@
+{
+  "services": [
+    {
+      "id": "web-server",
+      "name": "Local HTTP Server",
+      "tool": "http-server",
+      "args": { "port": 8000, "dir": "~" },
+      "autostart": true,
+      "created_at": "2026-09-11T10:00:00Z",
+      "state": "running",
+      "job_id": "J-4",
+      "last_job_id": "J-4",
+      "last_status": "RUNNING",
+      "last_exit_code": null
+    },
+    {
+      "id": "media-fetch",
+      "name": "Media Fetch",
+      "tool": "yt-dlp",
+      "args": { "url": "https://example.com/watch?v=xyz", "outdir": "~/downloads" },
+      "autostart": false,
+      "created_at": "2026-09-11T11:30:00Z",
+      "state": "stopped",
+      "job_id": null,
+      "last_job_id": "J-7",
+      "last_status": "COMPLETED",
+      "last_exit_code": 0
+    }
+  ]
+}

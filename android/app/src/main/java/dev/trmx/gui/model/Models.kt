@@ -58,6 +58,8 @@ data class Features(
     val runit: Boolean = false,
     val scheduler: Boolean = false,
     val tool_schema_errors: List<String> = emptyList(),   // §7.2 (bridge v0.4.0+)
+    val service_registry: Boolean = false,                // protocol 1.1 (§14, bridge v0.5.0+)
+    val service_errors: List<String> = emptyList(),       // malformed ~/.trmx/services/*.json
 )
 
 @Serializable
@@ -228,6 +230,49 @@ data class ToolSchema(
     val args: List<ToolArg> = emptyList(),
     val examples: List<ToolExample> = emptyList(),
 )
+
+// ---- Services (protocol 1.1, §14, bridge v0.5.0) ---------------------------
+
+/** One service: definition + live status derived from the bound job. */
+@Serializable
+data class ServiceStatus(
+    val id: String = "",
+    val name: String = "",
+    val tool: String = "",
+    val args: Map<String, JsonElement> = emptyMap(),
+    val autostart: Boolean = false,
+    val created_at: String? = null,
+    val state: String = "stopped",        // running|stopped
+    val job_id: String? = null,           // active job while running
+    val last_job_id: String? = null,
+    val last_status: String? = null,      // COMPLETED|FAILED|CANCELLED|LOST
+    val last_exit_code: Int? = null,
+    /** set only by the delete event payload */
+    val deleted: Boolean = false,
+)
+
+@Serializable
+data class ServicesResponse(
+    val services: List<ServiceStatus> = emptyList(),
+)
+
+/** POST /v1/services body: create/replace a definition. */
+@Serializable
+data class ServiceDefRequest(
+    val id: String,
+    val name: String,
+    val tool: String,
+    val args: Map<String, JsonElement> = emptyMap(),
+    val autostart: Boolean = false,
+)
+
+/** POST /v1/services/{id}/autostart body. */
+@Serializable
+data class AutostartRequest(val enabled: Boolean)
+
+/** DELETE /v1/services/{id} response. */
+@Serializable
+data class ServiceAck(val ok: Boolean = false, val id: String = "")
 
 /** GET /v1/tools element: ToolStatus (§7.1). */
 @Serializable

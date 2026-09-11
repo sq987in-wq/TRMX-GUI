@@ -1,0 +1,7 @@
+{
+  "id": "web-server",
+  "name": "Local HTTP Server",
+  "tool": "http-server",
+  "args": { "port": 8000, "dir": "~" },
+  "autostart": false
+}

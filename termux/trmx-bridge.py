@@ -13,6 +13,9 @@ Serves a subset of TRMX-P/1 (docs/PROTOCOL.md) on 127.0.0.1:
   GET  /v1/events                      global event stream, live only (§5; no
                                       Last-Event-ID replay yet)
   POST /v1/system/bridge               stop / restart (§8)
+  GET/POST /v1/services                service definitions + live status (§14, protocol 1.1)
+  GET/DELETE /v1/services/{id}         one service / remove definition (§14)
+  POST /v1/services/{id}/start|stop|restart|autostart   lifecycle (§14)
 
 Deliberately NOT in this PoC (later phases, see docs/decisions/ADR-004):
   tools/file endpoints, tool-schema argv synthesis, progress regex,
@@ -55,7 +58,7 @@ from collections import deque
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-VERSION = "0.4.2"
+VERSION = "0.5.0"
 PROTOCOL_VERSIONS = [1]
 
 LOG = logging.getLogger("trmx-bridge")
@@ -1488,6 +1491,213 @@ async def sse_frame(writer, event: str, eid, data: dict) -> None:
     await writer.drain()
 
 
+# --------------------------------------------------------------------------- service registry (protocol 1.1)
+
+SERVICE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+
+
+class ServiceRegistry:
+    """Named long-running services (protocol 1.1, PROTOCOL §14).
+
+    A service is a PERSISTENT DEFINITION (tool + fixed args + autostart
+    flag, ~/.trmx/services/<id>.json) bound at runtime to the job it last
+    started. Lifecycle = job lifecycle: start submits a normal tool job,
+    stop cancels it (idempotent, §3.5), restart waits for terminal then
+    resubmits, status derives from the bound job. Tool-based definitions
+    reuse the whole §7.2 synthesis/validation pipeline — services are NOT
+    a second execution path (ADR-015).
+    """
+
+    def __init__(self, home: Path, registry: ToolRegistry, manager: JobManager,
+                 store: Store, bus: EventBus):
+        self.home = home
+        self.registry = registry
+        self.manager = manager
+        self.store = store
+        self.bus = bus
+        self.defs: dict[str, dict] = {}
+        self.bindings: dict[str, str] = {}      # service id -> last started job id
+        self.errors: list[str] = []
+        self._load()
+
+    def _load(self) -> None:
+        self.defs, self.errors = {}, []
+        sdir = self.home / "services"
+        sdir.mkdir(parents=True, exist_ok=True)
+        for p in sorted(sdir.glob("*.json")):
+            try:
+                d = json.loads(p.read_text(encoding="utf-8"))
+                self._validate_def(d)
+            except Exception as e:  # noqa: BLE001
+                self.errors.append(f"{p.name}: {e}")
+                continue
+            self.defs[d["id"]] = d
+
+    def _validate_def(self, d: dict) -> None:
+        if not isinstance(d, dict):
+            raise ValueError("definition must be a JSON object")
+        sid = d.get("id")
+        if not isinstance(sid, str) or not SERVICE_ID_RE.fullmatch(sid) \
+                or sid.startswith("."):
+            raise ValueError("id must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+        if not isinstance(d.get("name"), str) or not (1 <= len(d["name"]) <= 80):
+            raise ValueError("name must be 1..80 chars")
+        tool = d.get("tool")
+        if not isinstance(tool, str) or not tool:
+            raise ValueError("tool is required")
+        schema = self.registry.get(tool)
+        if schema is None:
+            raise BridgeError(400, "TOOL_UNKNOWN",
+                              f"no tool schema with id '{tool}'", field="tool")
+        args = d.get("args", {})
+        if not isinstance(args, dict):
+            raise ValueError("args must be an object")
+        # dry-run the §7.2 synthesis: catches missing required args,
+        # bad types, enum/path violations — the same ARG_INVALID errors
+        self.registry.synth_argv(schema, args)
+        if not isinstance(d.get("autostart", False), bool):
+            raise ValueError("autostart must be a boolean")
+
+    def _write_def(self, d: dict) -> None:
+        path = self.home / "services" / f"{d['id']}.json"
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(d, indent=2, ensure_ascii=False) + "\n",
+                       encoding="utf-8")
+        os.replace(tmp, path)
+
+    # -- queries ----------------------------------------------------------
+
+    def status(self, sid: str) -> dict | None:
+        d = self.defs.get(sid)
+        if d is None:
+            return None
+        job_id = self.bindings.get(sid)
+        job = self.store.get_job(job_id) if job_id else None
+        state = "running" if (job and job["status"] in ACTIVE_STATES) else "stopped"
+        return {
+            "id": d["id"], "name": d["name"], "tool": d["tool"],
+            "args": d.get("args", {}),
+            "autostart": bool(d.get("autostart", False)),
+            "created_at": d.get("created_at"),
+            "state": state,
+            "job_id": job_id if state == "running" else None,
+            "last_job_id": job_id,
+            "last_status": job["status"] if job else None,
+            "last_exit_code": job["exit_code"] if job else None,
+        }
+
+    def list_status(self) -> list[dict]:
+        return [self.status(sid) for sid in sorted(self.defs)]
+
+    # -- mutations ----------------------------------------------------------
+
+    def create(self, body: dict) -> dict:
+        d = dict(body)
+        try:
+            self._validate_def(d)
+        except ValueError as e:
+            raise BridgeError(400, "VALIDATION_FAILED", str(e),
+                              field="definition") from e
+        sid = d["id"]
+        if sid in self.defs and self.status(sid)["state"] == "running":
+            raise BridgeError(409, "SERVICE_RUNNING",
+                              f"service '{sid}' is running — stop it before replacing it")
+        clean = {"id": sid, "name": d["name"], "tool": d["tool"],
+                 "args": d.get("args", {}), "autostart": bool(d.get("autostart", False)),
+                 "created_at": now_iso()}
+        self._write_def(clean)
+        self.defs[sid] = clean          # binding (last job) survives a replace
+        self.store.audit("service.create", f"{sid} (tool {clean['tool']})")
+        st = self.status(sid)
+        self.bus.publish("service.updated", st)
+        return st
+
+    def delete(self, sid: str) -> dict:
+        if sid not in self.defs:
+            raise BridgeError(404, "SERVICE_NOT_FOUND", f"no service with id '{sid}'")
+        if self.status(sid)["state"] == "running":
+            raise BridgeError(409, "SERVICE_RUNNING",
+                              f"service '{sid}' is running — stop it before deleting it")
+        (self.home / "services" / f"{sid}.json").unlink(missing_ok=True)
+        del self.defs[sid]
+        self.bindings.pop(sid, None)
+        self.store.audit("service.delete", sid)
+        self.bus.publish("service.updated", {"id": sid, "deleted": True})
+        return {"ok": True, "id": sid}
+
+    async def start(self, sid: str) -> dict:
+        d = self.defs.get(sid)
+        if d is None:
+            raise BridgeError(404, "SERVICE_NOT_FOUND", f"no service with id '{sid}'")
+        if self.status(sid)["state"] == "running":
+            raise BridgeError(409, "SERVICE_RUNNING",
+                              f"service '{sid}' is already running "
+                              f"(job {self.bindings.get(sid)})")
+        job, _ = await self.manager.submit({"name": f"service: {d['name']}",
+                                            "type": "tool", "tool": d["tool"],
+                                            "args": d.get("args", {}), "cwd": "~"})
+        self.bindings[sid] = job["job_id"]
+        self.store.audit("service.start", f"{sid} -> {job['job_id']}")
+        st = self.status(sid)
+        self.bus.publish("service.updated", st)
+        return st
+
+    async def stop(self, sid: str) -> dict:
+        if sid not in self.defs:
+            raise BridgeError(404, "SERVICE_NOT_FOUND", f"no service with id '{sid}'")
+        job_id = self.bindings.get(sid)
+        if job_id:
+            # cancel is idempotent on terminal jobs (§3.5) — stopping a
+            # stopped service stays 200, never a client-side race error
+            await self.manager.cancel(job_id, None, False)
+        self.store.audit("service.stop", f"{sid} (job {job_id or 'none'})")
+        st = self.status(sid)
+        self.bus.publish("service.updated", st)
+        return st
+
+    async def restart(self, sid: str) -> dict:
+        if sid not in self.defs:
+            raise BridgeError(404, "SERVICE_NOT_FOUND", f"no service with id '{sid}'")
+        job_id = self.bindings.get(sid)
+        if job_id:
+            await self.manager.cancel(job_id, None, False)
+            deadline = time.time() + 30
+            while time.time() < deadline:
+                job = self.store.get_job(job_id)
+                if not job or job["status"] in TERMINAL_STATES:
+                    break
+                await asyncio.sleep(0.1)
+            else:
+                raise BridgeError(500, "INTERNAL",
+                                  f"service '{sid}' did not stop within 30s")
+        self.store.audit("service.restart", sid)
+        return await self.start(sid)
+
+    def set_autostart(self, sid: str, enabled: bool) -> dict:
+        d = self.defs.get(sid)
+        if d is None:
+            raise BridgeError(404, "SERVICE_NOT_FOUND", f"no service with id '{sid}'")
+        d["autostart"] = enabled
+        self._write_def(d)
+        self.store.audit("service.autostart", f"{sid} = {enabled}")
+        st = self.status(sid)
+        self.bus.publish("service.updated", st)
+        return st
+
+    async def autostart_boot(self) -> None:
+        """Launch autostart services after boot reconciliation. Best-effort
+        per service: a failure is audited and skipped, never fatal."""
+        for sid, d in sorted(self.defs.items()):
+            if not d.get("autostart"):
+                continue
+            try:
+                if self.status(sid)["state"] == "running":
+                    continue
+                await self.start(sid)
+            except BridgeError as e:
+                self.store.audit("service.autostart", f"{sid} FAILED: {e.message}")
+
+
 class BridgeApp:
     """HTTP server + routing + auth for TRMX-P/1 (PoC subset)."""
 
@@ -1499,6 +1709,8 @@ class BridgeApp:
         self.bus = EventBus()
         self.manager = JobManager(home, self.store, config, self.policy, self.bus,
                                   self.registry)
+        self.services = ServiceRegistry(home, self.registry, self.manager,
+                                        self.store, self.bus)
         self.started = time.time()
         self._upload_seq = itertools.count(1)
         self.routes = [
@@ -1518,6 +1730,15 @@ class BridgeApp:
             ("POST", re.compile(r"^/v1/tools/refresh$"), self.h_tools_refresh),
             ("GET", re.compile(r"^/v1/events$"), self.h_events),
             ("POST", re.compile(r"^/v1/system/bridge$"), self.h_bridge_ctl),
+            # services (protocol 1.1, PROTOCOL §14)
+            ("GET", re.compile(r"^/v1/services$"), self.h_services_list),
+            ("POST", re.compile(r"^/v1/services$"), self.h_services_create),
+            ("GET", re.compile(r"^/v1/services/([A-Za-z0-9._-]+)$"), self.h_service_get),
+            ("DELETE", re.compile(r"^/v1/services/([A-Za-z0-9._-]+)$"), self.h_service_delete),
+            ("POST", re.compile(r"^/v1/services/([A-Za-z0-9._-]+)/start$"), self.h_service_start),
+            ("POST", re.compile(r"^/v1/services/([A-Za-z0-9._-]+)/stop$"), self.h_service_stop),
+            ("POST", re.compile(r"^/v1/services/([A-Za-z0-9._-]+)/restart$"), self.h_service_restart),
+            ("POST", re.compile(r"^/v1/services/([A-Za-z0-9._-]+)/autostart$"), self.h_service_autostart),
         ]
 
     # -- connection handling ----------------------------------------------
@@ -1757,7 +1978,9 @@ class BridgeApp:
             "features": {"termux_api": shutil.which("termux-notification") is not None,
                          "runit": shutil.which("sv") is not None,
                          "scheduler": False,
-                         "tool_schema_errors": list(self.registry.schema_errors)},
+                         "tool_schema_errors": list(self.registry.schema_errors),
+                         "service_registry": True,          # protocol 1.1 (§14)
+                         "service_errors": list(self.services.errors)},
             "tools_detected": len(self.registry.schemas)
         })
 
@@ -2228,6 +2451,43 @@ class BridgeApp:
 
         return SseStream(fn)
 
+    # -- services (protocol 1.1, PROTOCOL §14) -------------------------------
+
+    async def h_services_list(self, req, m):
+        return JsonResponse({"services": self.services.list_status()})
+
+    async def h_services_create(self, req, m):
+        body = self.parse_json_body(req)
+        st = self.services.create(body)
+        return JsonResponse(st, 201, [("Location", f"/v1/services/{st['id']}")])
+
+    async def h_service_get(self, req, m):
+        st = self.services.status(m.group(1))
+        if st is None:
+            raise BridgeError(404, "SERVICE_NOT_FOUND",
+                              f"no service with id '{m.group(1)}'")
+        return JsonResponse(st)
+
+    async def h_service_delete(self, req, m):
+        return JsonResponse(self.services.delete(m.group(1)))
+
+    async def h_service_start(self, req, m):
+        return JsonResponse(await self.services.start(m.group(1)))
+
+    async def h_service_stop(self, req, m):
+        return JsonResponse(await self.services.stop(m.group(1)))
+
+    async def h_service_restart(self, req, m):
+        return JsonResponse(await self.services.restart(m.group(1)))
+
+    async def h_service_autostart(self, req, m):
+        body = self.parse_json_body(req)
+        enabled = body.get("enabled")
+        if not isinstance(enabled, bool):
+            raise BridgeError(400, "VALIDATION_FAILED",
+                              "body must be {\"enabled\": boolean}", field="enabled")
+        return JsonResponse(self.services.set_autostart(m.group(1), enabled))
+
     async def h_bridge_ctl(self, req, m):
         body = self.parse_json_body(req)
         action = body.get("action")
@@ -2253,6 +2513,9 @@ class BridgeApp:
 
     async def serve(self) -> None:
         await self.manager.reconcile()
+        # protocol 1.1: autostart services launch after reconciliation —
+        # best-effort per service (see ServiceRegistry.autostart_boot)
+        await self.services.autostart_boot()
         server = await asyncio.start_server(self.handle_conn, "127.0.0.1", self.port)
         LOG.info("trmx-bridge %s listening on 127.0.0.1:%s (home=%s)",
                  VERSION, self.port, self.home)
@@ -2291,6 +2554,7 @@ def main() -> None:
     (home / "logs").mkdir(parents=True, exist_ok=True)
     (home / "tools").mkdir(parents=True, exist_ok=True)
     (home / "bin").mkdir(parents=True, exist_ok=True)
+    (home / "services").mkdir(parents=True, exist_ok=True)
 
     config = Config(home / "bridge.json").load()
     if args.port:

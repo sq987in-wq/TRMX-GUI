@@ -378,12 +378,55 @@ data: {"job_id":"J-1042","seq":4821,"text":"[download]  42.1% of ~123.45MiB"}
 
 ## 13. Versioning & governance
 
-- This document is the single source of truth for TRMX-P/1. Changes require: (a) an ADR in `docs/decisions/`, (b) updated fixtures (§14), (c) a `CHANGELOG.md` entry — in that order, in the same commit.
+- This document is the single source of truth for TRMX-P/1. Changes require: (a) an ADR in `docs/decisions/`, (b) updated fixtures (§15), (c) a `CHANGELOG.md` entry — in that order, in the same commit.
+- **Current minor: 1.1** (§14, services — bridge ≥ 0.5.0). The request header stays `X-TRMX-Protocol: 1`; minors are additive and capability-gated via `system/info.features`.
 - Additive changes (new optional fields, new endpoints, new error codes, new event names) bump the **protocol minor** (`1.x`) and MUST be ignored-unknown-field-safe by older clients.
 - Breaking changes (field removal/retyping, semantic changes) open `/v2/`, mounted beside `/v1` for ≥ 1 bridge release; the app supports both during the migration window.
 - Both test suites (Kotlin app, Python bridge) validate against the same fixtures — drift is a CI failure, not a runtime surprise.
 
-## 14. Fixture index
+## 14. Services (protocol 1.1, additive — bridge ≥ 0.5.0)
+
+Capability flag: `system/info.features.service_registry` = `true`. Clients MUST check it before offering service UI; older bridges 404 these routes. Malformed definition files are skipped and reported via `features.service_errors` (same pattern as `tool_schema_errors`).
+
+A service is a **persistent definition that runs a registry tool (§7) with fixed args**. There is no second execution path: `start` submits a normal `type:"tool"` job through the full §7.2 synthesis/validation and binds it; lifecycle = job lifecycle.
+
+Definition (`~/.trmx/services/<id>.json`, written by the bridge):
+
+```json
+{ "id": "web-server", "name": "Local HTTP Server", "tool": "http-server",
+  "args": { "port": 8000, "dir": "~" }, "autostart": false,
+  "created_at": "2026-09-11T10:00:00Z" }
+```
+
+`id` matches `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`; `name` is 1..80 chars; `tool` must exist (`TOOL_UNKNOWN` otherwise); `args` must pass §7.2 synthesis (`ARG_INVALID` otherwise); `autostart` is boolean.
+
+| Route | Semantics |
+|---|---|
+| `GET /v1/services` | list of status elements (below) |
+| `POST /v1/services` | create/replace a definition → `201` + status. Replace is refused while running (`409 SERVICE_RUNNING`) |
+| `GET /v1/services/{id}` | one status element (`404 SERVICE_NOT_FOUND`) |
+| `DELETE /v1/services/{id}` | remove the definition (refused while running); response `{"ok": true, "id": …}` |
+| `POST /v1/services/{id}/start` | submit the bound tool job → `200` + status (`409 SERVICE_RUNNING` if active) |
+| `POST /v1/services/{id}/stop` | cancel the bound job — **idempotent**: `200` + status even when already stopped |
+| `POST /v1/services/{id}/restart` | stop, wait ≤ 30 s for terminal, start → `200` + status |
+| `POST /v1/services/{id}/autostart` | body `{"enabled": boolean}` — persist the flag → `200` + status |
+
+Status element = definition fields plus:
+
+| Field | Meaning |
+|---|---|
+| `state` | `"running"` (bound job in an active state) \| `"stopped"` |
+| `job_id` | the active job while running, else `null` |
+| `last_job_id` | last job started for this service (binding survives restarts of the service) |
+| `last_status` / `last_exit_code` | terminal status of that job (`COMPLETED`/`FAILED`/`CANCELLED`/`LOST`) |
+
+New error codes: `SERVICE_NOT_FOUND` (404) · `SERVICE_RUNNING` (409). Definition problems reuse `VALIDATION_FAILED` / `TOOL_UNKNOWN` / `ARG_INVALID`.
+
+Events: `service.updated` carries the full status object on create/replace/start/stop/restart/autostart, and `{"id": …, "deleted": true}` on delete. Job-driven changes arrive as ordinary `job.updated` — clients correlate via `job_id`.
+
+Autostart: after boot reconciliation (§3.6), definitions with `autostart: true` are started best-effort; a failure is audited and skipped, never fatal to the bridge.
+
+## 15. Fixture index
 
 Shared contract fixtures live in [`fixtures/v1/`](../fixtures/v1/) and are normative:
 
@@ -400,6 +443,7 @@ Shared contract fixtures live in [`fixtures/v1/`](../fixtures/v1/) and are norma
 | `files.list.response.json` | §6.2 |
 | `files.ops.request.json` | §6.3 |
 | `tool.schema.yt-dlp.json` | §7.2 |
+| `services.def.request.json` · `services.list.response.json` | §14 |
 | `error.response.json` | §10 |
 
 *End of TRMX-P/1 draft. Reviewing this document is the Phase 1 exit gate; Phase 2 (bridge PoC) starts only after sign-off.*

@@ -14,10 +14,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.Build
+import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.foundation.layout.size
@@ -42,6 +44,7 @@ import dev.trmx.gui.ui.ChainsScreen
 import dev.trmx.gui.ui.DashboardScreen
 import dev.trmx.gui.ui.DiagnosticsSheet
 import dev.trmx.gui.ui.SchemaBuilderScreen
+import dev.trmx.gui.ui.ServicesScreen
 import dev.trmx.gui.ui.FilesScreen
 import dev.trmx.gui.ui.JobDetailScreen
 import dev.trmx.gui.ui.SubmitDialog
@@ -53,7 +56,7 @@ import dev.trmx.gui.ui.WizardScreen
 import dev.trmx.gui.wizard.WizardStep
 import java.io.File
 
-private enum class Screen { DASHBOARD, FILES, TOOLBOX, CHAINS, AI_BUILDER }
+private enum class Screen { DASHBOARD, FILES, TOOLBOX, CHAINS, AI_BUILDER, SERVICES }
 
 private const val FILE_PROVIDER = "dev.trmx.gui.fileprovider"
 
@@ -94,6 +97,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
     val filesState by vm.files.collectAsStateWithLifecycle()
     val toolsState by vm.tools.collectAsStateWithLifecycle()
     val schemaBuilder by vm.schemaBuilder.collectAsStateWithLifecycle()
+    val servicesState by vm.services.collectAsStateWithLifecycle()
     val toolFormState by vm.toolForm.collectAsStateWithLifecycle()
     val chainsState by vm.chains.collectAsStateWithLifecycle()
     val recipes by vm.recipes.collectAsStateWithLifecycle()
@@ -200,6 +204,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                     },
                     onSubmit = vm::submitToolForm,
                     onSaveRecipe = vm::saveRecipeFromForm,
+                    onSaveService = vm::saveServiceFromForm,
                 )
             } else {
                 // ---- main shell: bottom navigation (Phase 9.5) -----------
@@ -267,6 +272,21 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                                 },
                                 label = { Text("Chains", style = MaterialTheme.typography.labelSmall) },
                                 colors = TrmxNavItemColors())
+                            NavigationBarItem(
+                                selected = screen == Screen.SERVICES,
+                                onClick = {
+                                    vm.clearServicesNotice()
+                                    screen = Screen.SERVICES
+                                },
+                                icon = {
+                                    Icon(
+                                        if (screen == Screen.SERVICES) Icons.Filled.Dns
+                                        else Icons.Outlined.Dns,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(24.dp))
+                                },
+                                label = { Text("Services", style = MaterialTheme.typography.labelSmall) },
+                                colors = TrmxNavItemColors())
                         }
                     },
                 ) { padding ->
@@ -326,6 +346,21 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                                 onSubmitTimeout = vm::editTimeout,
                                 onSubmitJob = vm::submitJob,
                                 onDismissSubmit = vm::clearSubmitErrors,
+                                modifier = Modifier.padding(padding),
+                            )
+                        }
+                        Screen.SERVICES -> {
+                            LaunchedEffect(Unit) { vm.loadServices() }
+                            ServicesScreen(
+                                state = servicesState,
+                                onStart = vm::startService,
+                                onStop = vm::stopService,
+                                onRestart = vm::restartService,
+                                onToggleAutostart = vm::setServiceAutostart,
+                                onDelete = vm::deleteService,
+                                onOpenJob = { vm.selectJob(it) },
+                                onOpenToolbox = { screen = Screen.TOOLBOX },
+                                onRefresh = vm::loadServices,
                                 modifier = Modifier.padding(padding),
                             )
                         }

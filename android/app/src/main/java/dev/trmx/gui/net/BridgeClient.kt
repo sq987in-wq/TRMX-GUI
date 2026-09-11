@@ -11,6 +11,7 @@ package dev.trmx.gui.net
  * OkHttp never sends an Origin header (that would be 403 ORIGIN_DENIED).
  */
 
+import dev.trmx.gui.model.AutostartRequest
 import dev.trmx.gui.model.CancelRequest
 import dev.trmx.gui.model.ErrorEnvelope
 import dev.trmx.gui.model.FileListResponse
@@ -19,6 +20,10 @@ import dev.trmx.gui.model.FileOpResponse
 import dev.trmx.gui.model.FileStatResponse
 import dev.trmx.gui.model.JobSummary
 import dev.trmx.gui.model.JobsPage
+import dev.trmx.gui.model.ServiceAck
+import dev.trmx.gui.model.ServiceDefRequest
+import dev.trmx.gui.model.ServiceStatus
+import dev.trmx.gui.model.ServicesResponse
 import dev.trmx.gui.model.SubmitOutcome
 import dev.trmx.gui.model.SubmitRequest
 import dev.trmx.gui.model.SubmitResponse
@@ -219,6 +224,46 @@ class BridgeClient(
         }
 
     // ---- internals -----------------------------------------------------
+
+    // ---- services (protocol 1.1, §14) -------------------------------------
+
+    suspend fun listServices(): BridgeResult<ServicesResponse> =
+        get("/v1/services") { body, _ ->
+            jsonFormat.decodeFromString(ServicesResponse.serializer(), body)
+        }
+
+    suspend fun createService(request: ServiceDefRequest): BridgeResult<ServiceStatus> =
+        call("POST", "/v1/services",
+             jsonFormat.encodeToString(ServiceDefRequest.serializer(), request).toRequestBody(JSON)) { body, _ ->
+            jsonFormat.decodeFromString(ServiceStatus.serializer(), body)
+        }
+
+    suspend fun deleteService(id: String): BridgeResult<ServiceAck> =
+        call("DELETE", "/v1/services/${enc(id)}", null) { body, _ ->
+            jsonFormat.decodeFromString(ServiceAck.serializer(), body)
+        }
+
+    suspend fun startService(id: String): BridgeResult<ServiceStatus> =
+        call("POST", "/v1/services/${enc(id)}/start", null) { body, _ ->
+            jsonFormat.decodeFromString(ServiceStatus.serializer(), body)
+        }
+
+    suspend fun stopService(id: String): BridgeResult<ServiceStatus> =
+        call("POST", "/v1/services/${enc(id)}/stop", null) { body, _ ->
+            jsonFormat.decodeFromString(ServiceStatus.serializer(), body)
+        }
+
+    suspend fun restartService(id: String): BridgeResult<ServiceStatus> =
+        call("POST", "/v1/services/${enc(id)}/restart", null) { body, _ ->
+            jsonFormat.decodeFromString(ServiceStatus.serializer(), body)
+        }
+
+    suspend fun setServiceAutostart(id: String, enabled: Boolean): BridgeResult<ServiceStatus> =
+        call("POST", "/v1/services/${enc(id)}/autostart",
+             jsonFormat.encodeToString(AutostartRequest.serializer(),
+                                       AutostartRequest(enabled)).toRequestBody(JSON)) { body, _ ->
+            jsonFormat.decodeFromString(ServiceStatus.serializer(), body)
+        }
 
     private suspend fun <T> get(
         path: String,

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.AlertDialog
@@ -73,6 +74,7 @@ fun ToolFormScreen(
     onExample: (ToolExample) -> Unit,
     onSubmit: () -> Unit,
     onSaveRecipe: (String) -> Unit,
+    onSaveService: () -> Unit,
 ) {
     val schema = state.schema ?: return
     var confirmRun by remember { mutableStateOf(false) }
@@ -88,9 +90,13 @@ fun ToolFormScreen(
             subtitle = if (state.stepIndex != null)
                 "editing chain step ${state.stepIndex + 1}" else null,
             actions = {
-                // Save-recipe lives in the header (P4): the sticky bar is
-                // reserved for the ONE primary action.
+                // Save-recipe + save-as-service live in the header (P4): the
+                // sticky bar is reserved for the ONE primary action.
                 if (state.stepIndex == null) {
+                    IconButton(onClick = { onSaveService() }) {
+                        Icon(Icons.Outlined.Dns, contentDescription = "save as service",
+                             tint = P.TextSecondary)
+                    }
                     IconButton(onClick = { saveRecipe = true }) {
                         Icon(Icons.Outlined.StarBorder, contentDescription = "save recipe",
                              tint = P.TextSecondary)

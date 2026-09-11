@@ -19,6 +19,8 @@ import dev.trmx.gui.job.OutputReducer
 import dev.trmx.gui.job.SubmitValidator
 import dev.trmx.gui.model.FileOpRequest
 import dev.trmx.gui.model.JobSummary
+import dev.trmx.gui.model.ServiceDefRequest
+import dev.trmx.gui.model.ServiceStatus
 import dev.trmx.gui.model.SubmitRequest
 import dev.trmx.gui.model.SystemInfo
 import dev.trmx.gui.net.BridgeClient
@@ -137,6 +139,16 @@ data class SchemaBuilderState(
     val error: String? = null,      // submit-side error (validation/HTTP)
 )
 
+/** Services state (protocol 1.1, §14). */
+data class ServicesState(
+    val services: List<ServiceStatus> = emptyList(),
+    val loading: Boolean = false,
+    val error: String? = null,
+    val notice: String? = null,
+    /** null = unknown (bridge < 0.5.0); false shows the upgrade card */
+    val supported: Boolean? = null,
+)
+
 /** One dynamic tool form (a schema + live field values). */
 data class ToolFormState(
     val schema: dev.trmx.gui.model.ToolSchema? = null,
@@ -208,6 +220,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _schemaBuilder = MutableStateFlow(SchemaBuilderState())
     val schemaBuilder = _schemaBuilder.asStateFlow()
+
+    private val _services = MutableStateFlow(ServicesState())
+    val services = _services.asStateFlow()
 
     private val _chains = MutableStateFlow(ChainsState())
     val chains = _chains.asStateFlow()
@@ -946,6 +961,122 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---- services (protocol 1.1, §14) ----------------------------------------
+
+    /** Capability flag from the last system/info (null = not fetched yet). */
+    fun noteServiceSupport(supported: Boolean?) {
+        _services.update { it.copy(supported = supported) }
+    }
+
+    fun loadServices() {
+        if (_services.value.loading) return
+        _services.update { it.copy(loading = true, error = null) }
+        viewModelScope.launch {
+            when (val r = client().listServices()) {
+                is BridgeResult.Success -> {
+                    _services.update {
+                        it.copy(loading = false, services = r.data.services,
+                                supported = true)
+                    }
+                }
+                is BridgeResult.HttpError ->
+                    _services.update { it.copy(loading = false,
+                                               error = "HTTP ${r.status} ${r.code} — ${r.message}") }
+                is BridgeResult.NetworkError ->
+                    _services.update { it.copy(loading = false,
+                                               error = "bridge unreachable: ${r.cause.message}") }
+            }
+        }
+    }
+
+    fun clearServicesNotice() = _services.update { it.copy(notice = null, error = null) }
+
+    private fun applyServiceResult(r: BridgeResult<ServiceStatus>, what: String) {
+        when (r) {
+            is BridgeResult.Success -> {
+                val st = r.data
+                _services.update { s ->
+                    s.copy(notice = "${st.name}: $what",
+                           services = s.services.map {
+                               if (it.id == st.id) st else it
+                           })
+                }
+            }
+            is BridgeResult.HttpError ->
+                _services.update { it.copy(error = "HTTP ${r.status} ${r.code} — ${r.message}") }
+            is BridgeResult.NetworkError ->
+                _services.update { it.copy(error = "bridge unreachable: ${r.cause.message}") }
+        }
+    }
+
+    fun startService(id: String) {
+        viewModelScope.launch { applyServiceResult(client().startService(id), "started") }
+    }
+
+    fun stopService(id: String) {
+        viewModelScope.launch { applyServiceResult(client().stopService(id), "stopping…") }
+    }
+
+    fun restartService(id: String) {
+        viewModelScope.launch { applyServiceResult(client().restartService(id), "restarted") }
+    }
+
+    fun setServiceAutostart(id: String, enabled: Boolean) {
+        viewModelScope.launch {
+            applyServiceResult(client().setServiceAutostart(id, enabled),
+                               if (enabled) "autostart on" else "autostart off")
+        }
+    }
+
+    fun deleteService(id: String) {
+        viewModelScope.launch {
+            when (val r = client().deleteService(id)) {
+                is BridgeResult.Success -> {
+                    _services.update { s ->
+                        s.copy(notice = "service deleted",
+                               services = s.services.filterNot { it.id == id })
+                    }
+                }
+                is BridgeResult.HttpError ->
+                    _services.update { it.copy(error = "HTTP ${r.status} ${r.code} — ${r.message}") }
+                is BridgeResult.NetworkError ->
+                    _services.update { it.copy(error = "bridge unreachable: ${r.cause.message}") }
+            }
+        }
+    }
+
+    /** Save the CURRENT tool form as a service definition (§14): the form's
+     *  validated args become the service's fixed args. Long-running tools
+     *  (http-server & friends) are the natural fit, but any tool works. */
+    fun saveServiceFromForm() {
+        val f = _toolForm.value
+        val schema = f.schema ?: return
+        if (f.stepIndex != null) return
+        if (!FormEngine.isSubmittable(schema, f.values)) {
+            _toolForm.update { it.copy(error = "fill the required fields first",
+                                       touched = f.values.keys) }
+            return
+        }
+        val args = FormEngine.argsPayload(schema, f.values)
+        val sid = schema.id.replace(Regex("[^A-Za-z0-9._-]"), "-")
+        viewModelScope.launch {
+            when (val r = client().createService(
+                    ServiceDefRequest(id = sid, name = schema.name.ifBlank { sid },
+                                      tool = schema.id, args = args))) {
+                is BridgeResult.Success -> {
+                    _toolForm.update {
+                        it.copy(notice = "saved as service \"${r.data.id}\" — manage it in Services")
+                    }
+                    _services.update { it.copy(notice = "service \"${r.data.name}\" created") }
+                }
+                is BridgeResult.HttpError ->
+                    _toolForm.update { it.copy(error = "HTTP ${r.status} ${r.code} — ${r.message}") }
+                is BridgeResult.NetworkError ->
+                    _toolForm.update { it.copy(error = "bridge unreachable: ${r.cause.message}") }
+            }
+        }
+    }
+
     // ---- artifacts (Phase 9.5) ---------------------------------------------
 
     /**
@@ -1371,6 +1502,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         "install ${if (job.status == "COMPLETED") "finished" else job.status.lowercase()} — rescanning") }
                     refreshToolsNow()
                 }
+                // protocol 1.1: a bound service job changed state — refresh
+                // that service's derived status without a round trip
+                val bound = _services.value.services.firstOrNull { it.job_id == job.job_id }
+                if (bound != null) {
+                    _services.update { s ->
+                        s.copy(services = s.services.map {
+                            if (it.id == bound.id) it.copy(
+                                state = if (job.status in TERMINAL) "stopped" else "running",
+                                last_status = job.status,
+                                last_exit_code = job.exit_code,
+                                job_id = if (job.status in TERMINAL) null else job.job_id)
+                            else it
+                        })
+                    }
+                }
                 // AI round: a finished trmx-ai job installed a schema —
                 // rescan the registry so the new tool appears immediately
                 if (aiWatch == job.job_id && job.status in TERMINAL) {
@@ -1383,6 +1529,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     } else {
                         _schemaBuilder.update {
                             it.copy(result = "job ${job.status.lowercase()} — open it for details")
+                        }
+                    }
+                }
+            }
+            "service.updated" -> {
+                // protocol 1.1: replace/delete the entry in place
+                val st = runCatching {
+                    BridgeClient.jsonFormat.decodeFromString(ServiceStatus.serializer(), frame.data)
+                }.getOrNull()
+                if (st != null) {
+                    _services.update { s ->
+                        when {
+                            st.deleted -> s.copy(services = s.services.filterNot { it.id == st.id })
+                            s.services.any { it.id == st.id } ->
+                                s.copy(services = s.services.map { if (it.id == st.id) st else it })
+                            else -> s.copy(services = s.services + st)
                         }
                     }
                 }
@@ -1406,7 +1568,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val client = client()
             when (val info = client.systemInfo()) {
-                is BridgeResult.Success -> _dashboard.update { it.copy(info = info.data) }
+                is BridgeResult.Success -> {
+                    _dashboard.update { it.copy(info = info.data) }
+                    // protocol 1.1 capability flag (§14) — drives the Services tab
+                    noteServiceSupport(info.data.features?.service_registry)
+                }
                 is BridgeResult.HttpError -> {
                     _dashboard.update { it.copy(error = "HTTP ${info.status}: ${info.code}") }
                     return@launch

@@ -512,3 +512,49 @@ Update the backend first so the phone runs trmx-ai 0.2.0
 ### Switching
 - [ ] Flip `mode` back to `cli` → offline builds work again without any
       other change.
+
+---
+
+## Round 7 — Services milestone: protocol 1.1 (2026-09-11)
+
+Update the backend first (Diagnostics → reinstall / installer) so the
+phone runs bridge v0.5.0 (`Diagnostics → Bridge` version).
+
+### Create a service
+- [ ] Toolbox → Local HTTP Server → fill the form (default port 8000,
+      folder ~) → tap the SERVER (Dns) icon in the form header →
+      "saved as service" notice.
+- [ ] Services tab (5th nav item): the service card appears, state
+      "stopped — never started", autostart chip off.
+
+### Lifecycle
+- [ ] Start → state running (cyan dot), a "view job" link appears;
+      opening it shows the live server output; the server actually
+      serves (open http://127.0.0.1:8000 in a browser on the phone).
+- [ ] Start again while running → clean "already running" error, no
+      duplicate job.
+- [ ] Stop → state settles on stopped · last run cancelled.
+- [ ] Stop again while stopped → still fine (idempotent), no error.
+- [ ] Restart while running → new job id, still running.
+- [ ] Long-press/back navigation: leaving the tab and returning keeps
+      live state (job.updated correlation).
+
+### Autostart
+- [ ] Toggle the autostart chip on → restart the BRIDGE (Diagnostics →
+      Restart) → after reconnect the service is running again without
+      manual start.
+- [ ] Toggle off → bridge restart → stays stopped.
+- [ ] `~/.trmx/services/<id>.json` on the phone reflects the flag.
+
+### Delete
+- [ ] Delete while running → refused with a clear message.
+- [ ] Stop, then delete → confirm dialog → card gone; the tool itself
+      still works from the Toolbox.
+
+### Older bridge (honesty)
+- [ ] If pointed at a pre-0.5.0 bridge (or before updating): the
+      Services tab shows the "Bridge update needed" card, no crash.
+
+### Regression invariants (unchanged behavior)
+- [ ] Normal tool jobs, chains, AI builder, files all work as before.
+- [ ] Both python + JVM suites green in CI for this commit.
